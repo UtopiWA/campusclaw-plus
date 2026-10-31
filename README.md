@@ -61,6 +61,6 @@ python scripts/check.py --mode api
 
 ## 开发与安全
 
-项目保留 CampusClaw 的提交历史，新增业务通过 OpenSpec change 评审、实现与验收。运行基线实现与验收进度见[项目状态](docs/project-status.md)，日志字段、版本覆盖和回滚流程见[运维规范](docs/standards/05-operations.md)。
+项目继承 CampusClaw 的代码与功能，Git 历史从团队项目启动提交开始保留。新增业务通过 OpenSpec change 评审、实现与验收。运行基线实现与验收进度见[项目状态](docs/project-status.md)，日志字段、版本覆盖和回滚流程见[运维规范](docs/standards/05-operations.md)。
 
 `.env`、真实凭据与个人学习数据不得提交。演示种子仅用于本地或课堂环境，公开部署应关闭演示初始化。项目采用 [MIT 许可证](LICENSE)。

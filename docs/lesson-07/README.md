@@ -1,6 +1,6 @@
 # Class07 团队基线验收记录
 
-核对日期：2026-10-31。运行验收对应实现提交 `f03e57a`，后续已合入 MIT LICENSE；成员 A/B 的人工评审不由本记录代签。已归档 change：[2026-10-31-establish-team-baseline](../../openspec/changes/archive/2026-10-31-establish-team-baseline/proposal.md)。
+核对日期：2026-10-31。运行验收对应实现提交 `f7ca6f7`，后续已合入 MIT LICENSE；成员 A/B 的人工评审不由本记录代签。已归档 change：[2026-10-31-establish-team-baseline](../../openspec/changes/archive/2026-10-31-establish-team-baseline/proposal.md)。
 
 ## 本轮实际结果
 
