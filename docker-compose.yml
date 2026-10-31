@@ -50,6 +50,8 @@ services:
       context: ./backend
     restart: unless-stopped
     environment:
+      # 未设置时不注入，后端使用构建元数据；显式空值会被后端拒绝。
+      APP_VERSION:
       DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-campusclaw}?useUnicode=true&characterEncoding=utf8&connectionTimeZone=UTC
       DB_USERNAME: ${MYSQL_USER:-campusclaw}
       DB_PASSWORD: ${MYSQL_PASSWORD}
@@ -91,7 +93,7 @@ services:
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/health"]
       interval: 10s
-      timeout: 5s
+      timeout: 10s
       retries: 10
       start_period: 30s
 

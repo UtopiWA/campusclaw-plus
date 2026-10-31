@@ -35,7 +35,7 @@ docker compose --env-file .env up -d --build
 ```
 
 - 应用：<http://localhost:8080>
-- 健康检查：<http://localhost:8080/health>，当前检查应用与数据库。
+- 健康检查：<http://localhost:8080/health>，返回版本、UTC 时间与数据库/Qdrant 状态；两者就绪返回 200，否则 503，模型与 MCP 标为 `not_checked`。
 - API 文档：<http://localhost:8080/swagger-ui/index.html>
 
 停止服务并保留数据：
@@ -48,20 +48,19 @@ docker compose down
 
 ## 检查与测试
 
-前端与后端检查在仓库根目录执行，需要 Node.js 22+、Java 17 和可访问的 Docker Engine：
+在仓库根目录执行，需要 Node.js 22+、Java 17、Python 3 和 OpenSpec CLI；容器检查另需 Docker Engine：
 
 ```powershell
 npm.cmd --prefix frontend ci
-npm.cmd --prefix frontend test -- --run
-npm.cmd --prefix frontend run build
-backend\mvnw.cmd -f backend\pom.xml test
-openspec validate --all --strict
+python scripts/check.py
+python scripts/check.py --mode integration
+python scripts/check.py --mode api
 ```
 
-后端集成测试启动独立的 MySQL/Qdrant 容器，报告位于 `backend/target/surefire-reports/`。运行中应用的接口验收另按 [接口回归说明](apitest/README.md) 准备环境和数据，报告位于 `apitest/reports/`。
+默认 `unit` 检查规约、前端、非容器后端及 Python；`integration` 使用独立 MySQL/Qdrant 容器。`api` 需按 [接口说明](apitest/README.md) 准备运行中应用、账号和材料；`all` 顺序执行三组，失败即停止。退出码：0 通过、1 检查失败、2 参数/环境缺失。原始输出在 `backend/target/check-logs/`，后端报告在 `backend/target/surefire-reports/`，接口报告在 `apitest/reports/`。
 
 ## 开发与安全
 
-项目保留 CampusClaw 的提交历史，新增业务通过 OpenSpec change 评审、实现与验收。五类工程规范已成文，团队运行基线仍待实现与验收。
+项目保留 CampusClaw 的提交历史，新增业务通过 OpenSpec change 评审、实现与验收。运行基线实现与验收进度见[项目状态](docs/project-status.md)，日志字段、版本覆盖和回滚流程见[运维规范](docs/standards/05-operations.md)。
 
 `.env`、真实凭据与个人学习数据不得提交。演示种子仅用于本地或课堂环境，公开部署应关闭演示初始化。当前未提供 LICENSE，许可选择由团队确认。

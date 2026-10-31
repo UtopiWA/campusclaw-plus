@@ -4,6 +4,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 
 import com.campusclaw.auth.JpaUserDetailsService;
 import org.junit.jupiter.api.Test;
@@ -41,9 +42,11 @@ class SecurityConfigTest {
 
         mvc.perform(get("/api/probe"))
                 .andExpect(status().isUnauthorized())
+                .andExpect(header().exists("X-Request-Id"))
                 .andExpect(jsonPath("$.error").value("Authentication required"));
         mvc.perform(get("/api/probe").with(jwt()))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(header().exists("X-Request-Id"));
     }
 
     /** 仅为安全过滤链切片测试提供可预测的公开与受保护端点。 */

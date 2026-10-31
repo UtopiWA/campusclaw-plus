@@ -33,6 +33,32 @@ def run(context) -> None:
     body = require_mapping(created.json(), "MCP 服务响应应为 JSON 对象")
     server_id = body.get("id")
     require(isinstance(server_id, int) and server_id > 0, "MCP 服务响应应包含数字 ID")
+
+    def cleanup_mcp() -> None:
+        row = context.db.query_one(
+            "SELECT id FROM mcp_servers WHERE id = %s AND class_id = %s AND name = %s",
+            (server_id, class_id, server_name),
+        )
+        if row is None:
+            return
+        audit = context.db.query_one(
+            "SELECT COUNT(*) AS total FROM mcp_tool_calls WHERE server_id = %s AND class_id = %s",
+            (server_id, class_id),
+        )
+        if audit and audit["total"]:
+            # 审计是课程要求保留的历史，清理器只能断开服务，不能绕过限制外键删记录。
+            disconnected = context.http.request(
+                "POST", f"/api/mcp/servers/{server_id}/disconnect", token=teacher["token"]
+            )
+            require_equal(disconnected.status, 200, "有审计的测试服务应保留并保持断开")
+            return
+        deleted = context.http.request(
+            "DELETE", f"/api/mcp/servers/{server_id}", token=teacher["token"]
+        )
+        require_equal(deleted.status, 204, "无审计时只应删除本轮创建的 MCP 服务")
+
+    context.add_cleanup("删除无审计服务或断开并保留本轮审计", cleanup_mcp)
+
     require_equal(body.get("name"), server_name, "服务名应保持不变")
     require_equal(body.get("connected"), False, "新服务应处于断开状态")
     require_equal(body.get("hasAuth"), True, "响应只能使用 hasAuth 表示凭据存在")
@@ -186,28 +212,4 @@ def run(context) -> None:
     require(before_server == after_server, "跨班请求不得改变服务配置、Token 密文或连接状态")
     require(before_tools == after_tools, "跨班请求不得改变工具缓存")
 
-    def cleanup_mcp() -> None:
-        row = context.db.query_one(
-            "SELECT id FROM mcp_servers WHERE id = %s AND class_id = %s AND name = %s",
-            (server_id, class_id, server_name),
-        )
-        if row is None:
-            return
-        audit = context.db.query_one(
-            "SELECT COUNT(*) AS total FROM mcp_tool_calls WHERE server_id = %s AND class_id = %s",
-            (server_id, class_id),
-        )
-        if audit and audit["total"]:
-            # 审计是课程要求保留的历史，清理器只能断开服务，不能绕过限制外键删记录。
-            disconnected = context.http.request(
-                "POST", f"/api/mcp/servers/{server_id}/disconnect", token=teacher["token"]
-            )
-            require_equal(disconnected.status, 200, "有审计的测试服务应保留并保持断开")
-            return
-        deleted = context.http.request(
-            "DELETE", f"/api/mcp/servers/{server_id}", token=teacher["token"]
-        )
-        require_equal(deleted.status, 204, "无审计时只应删除本轮创建的 MCP 服务")
-
-    context.add_cleanup("删除无审计服务或断开并保留本轮审计", cleanup_mcp)
     context.state["mcp_server"] = {"id": server_id, "name": server_name}

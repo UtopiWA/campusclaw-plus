@@ -144,9 +144,11 @@ class CampusClawIntegrationTest {
     @MockBean EmbeddingGateway embeddings;
     @MockBean VectorStoreGateway vectors;
     @MockBean ChatGateway chat;
+    @MockBean com.campusclaw.health.QdrantHealthProbe qdrantHealth;
 
     @BeforeEach
     void restoreSpy() {
+        when(qdrantHealth.isReady()).thenReturn(true);
         reset(knowledgeEntries);
         reset(embeddings, vectors, chat);
         org.mockito.Mockito.when(embeddings.embed(any())).thenAnswer(invocation -> {

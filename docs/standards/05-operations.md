@@ -1,6 +1,6 @@
 # 部署、配置与运维规范
 
-本规范记录可执行的部署约定、继承例外和待实现目标。当前已有 Compose 应用；新健康字段、JSON/request ID、版本和统一检查仍待团队基线实施。记录在此不表示已部署，也不授权提交、推送、打标签或修改真实环境。
+本规范记录部署约定、继承例外和后续目标。健康字段、JSON/request ID、构建版本和统一检查已加入实现；自动检查与真实部署验收分别记录，不因代码存在就视为交付完成。
 
 ## 1. 构建、环境和配置
 
@@ -8,7 +8,7 @@
 
 本地、测试和公开演示分别使用私有 `.env`、独立数据库/卷及凭据；真实模型验收说明环境类别，不公开供应商密钥或本机地址。当前不实现生产级高可用、蓝绿发布或多租户。
 
-配置样例的基线目标是**只列键名**：必填条目 `KEY=`，可选项以注释列键名并写格式/安全默认，避免复制后空值覆盖运行默认。实际 `.env.example` 仍含占位值与默认值，任务 4.4 再修改；本轮不改模板、Compose 或默认运行行为。
+配置样例**只列键名**：必填条目 `KEY=`，可选项以注释列键名并写格式/安全默认。覆盖可选项时写成 `KEY=值`，避免空值覆盖默认。已有私有 `.env` 不随模板自动改写。
 
 | 配置组 | 项目键名及判据 |
 | --- | --- |
@@ -17,8 +17,8 @@
 | 模型 | `EMBEDDING_BASE_URL/API_KEY/MODEL/DIMENSION` 与 `CHAT_BASE_URL/API_KEY/MODEL` 必须按实际服务填写；维度匹配 Cosine collection；`CHAT_REASONING_EFFORT` 默认 none，显式空值用于省略该供应商扩展字段 |
 | MCP | `MCP_AUTH_TOKEN` 与登记服务的 Token 一致；`MCP_TOKEN_ENCRYPTION_KEY` 是独立 32 随机字节的 Base64；白名单默认 mcp-demo；连接/读取默认 3s/10s |
 | 材料/检索 | `MAX_UPLOAD_BYTES` 默认 2097152；连接/读取 3s/30s；宽召回/双路/强向量为 0.35/0.45/0.55，必须有序，RRF K=60 |
-| 基线版本（待实现） | `APP_VERSION` 可覆盖构建版本，匹配 `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`；显式空值/非法值拒绝，不读取本机 Git 路径或远端作为运行依赖 |
-| 测试专用（待实现） | `TESTCONTAINERS_API_VERSION` 仅用于检查入口向 Maven 传测试客户端版本，非法值退出 2，不写入应用运行环境 |
+| 基线版本 | `APP_VERSION` 可覆盖 Maven build-info 的项目版本，匹配 `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`；显式空值/非法值拒绝，不读取本机 Git 路径或远端作为运行依赖 |
+| 测试专用 | `TESTCONTAINERS_API_VERSION` 仅用于检查入口向 Maven 传测试客户端版本，非法值退出 2，不写入应用运行环境 |
 
 这里的组合写法代表各个带前缀的配置键，不是一个包含斜杠的变量名。完整现有绑定以 `application.yml`、Compose 和对应 Properties 为准；新增键必须同步绑定、模板格式说明和负向测试。必需秘密/地址缺失须失败；非敏感安全默认值允许沿用，这是明确的继承例外，不机械执行“所有配置无默认值”。
 
@@ -35,16 +35,18 @@ curl.exe -f http://localhost:8080/health
 
 | 范围 | 当前事实 | 本 change 验收目标 |
 | --- | --- | --- |
-| `/health` | 仅检查数据库，返回 status | 保留 `ok/unhealthy`；增加 version、UTC time、database/qdrant 的 up/down；两者决定 200/503 |
+| `/health` | 返回 status、version、UTC time、dependencies | `database/qdrant` 均 up 返回 200/ok，否则 503/unhealthy |
 | 模型与动态 MCP | 没有通用无副作用健康协议 | health 明示 `not_checked`，不能宣传所有 AI 能力正常；真实接口另验 |
-| 探测时间 | Compose 后端 timeout 为 5s | 数据库沿用池获取 3000ms，再 `isValid(1)`；Qdrant 独立 1000ms 连接/读取、无重试；受控 HTTP 故障 8s 内结束，Compose timeout 改 10s |
-| 版本 | 没有 health 构建版本 | 镜像携带构建元数据，部署覆盖受校验，可核对候选/回滚版本 |
+| 探测时间 | Compose 后端 timeout 已为 10s | 数据库池获取 3000ms，再 `isValid(1)`；Qdrant 独立 1000ms 连接及请求上限、无重试；受控故障 8s 内结束 |
+| 版本 | JAR 携带 build-info，支持 APP_VERSION | 部署覆盖受校验，可核对候选/回滚版本 |
 
-health 不运行 Chat/Embedding 生成、不调 MCP 工具、不列教师配置、不写 collection。停止隔离 Qdrant 后必须看到 503，恢复后重新 200；不因探测方便放开其他业务。现阶段不能把目标字段写成已可使用的承诺。
+health 不运行 Chat/Embedding 生成、不调 MCP 工具、不列教师配置、不写 collection。停止隔离 Qdrant 后必须看到 503，恢复后重新 200；该真实环境演练仍需单独验收。
 
 ## 3. 日志、时限与停机
 
-后端日志目标为一行一个合法 JSON，字段 `timestamp/level/logger/event/requestId`；无请求上下文为 null。请求完成事件增加 `method/path/status/durationMs`，路径无 query 值；401/403/404、SSE 正常/失败/超时都需正确关联。只接受 1～64 位允许字符的单一请求头 ID，其他情况生成 UUID；异步线程结束恢复上下文，完成事件不重复。
+后端日志一行一个合法 JSON，字段 `timestamp/level/logger/event/requestId`；无请求上下文为 null。请求完成事件增加 `method/path/status/durationMs`；path 使用匹配路由模板，未匹配或未进入 MVC 时为 `/unmapped`，不含 query 值。只接受 `[A-Za-z0-9_-]{1,64}` 的单一 `X-Request-Id`，其他情况生成 UUID；响应头回传，异步线程结束恢复上下文，完成事件不重复。
+
+`JsonLogEncoder` 仅接受请求过滤器的固定结构化字段。普通日志标为 `application_log`，原消息、参数和异常堆栈不输出，异常仅保留类名；因此诊断依靠 logger、level、requestId 与固定失败标记，不能期待看到完整异常文本。容器报告异步错误/超时或未处理异常时附加 `failureCode`。已在业务层转为 SSE error 的失败不必触发容器错误，须看既有 SSE/消息状态；不得将 HTTP 200 当作流式业务成功。
 
 不写密码、Bearer、提示词/用户正文、完整参数/响应、内部地址、绝对路径或供应商原始异常。对异常记录稳定类别/失败代码，不用堆栈绕过脱敏。Nginx/MCP 基础容器现有日志不宣称已统一成后端应用格式；本 change 的 JSON 编码范围为后端，其他服务扩展需另列范围。
 

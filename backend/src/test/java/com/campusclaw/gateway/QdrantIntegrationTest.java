@@ -31,6 +31,7 @@ class QdrantIntegrationTest {
     void createsReusesAndRejectsIncompatibleCollectionWhileRoundTrippingNumberOnlyPoints() throws Exception {
         String url = "http://" + QDRANT.getHost() + ":" + QDRANT.getMappedPort(6333);
         AppProperties properties = properties(url, 3);
+        assertThat(new com.campusclaw.health.QdrantHealthProbe(properties).isReady()).isTrue();
         QdrantVectorStoreGateway gateway = new QdrantVectorStoreGateway(
                 properties, new GatewayRestClientFactory(properties));
 

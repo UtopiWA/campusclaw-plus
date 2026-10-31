@@ -18,6 +18,8 @@
 
 3. 确认 A 班至少有一份 `READY` 材料和知识切片。接口套件会读取该材料，但不会删除或修改它。
 
+   跨班 MCP 检查另需 B 班教师 `teacher-b`，密码与 `APITEST_TEACHER_PASSWORD`（或其演示密码回退值）一致。默认演示种子只创建 `teacher-a/student-a1/student-b1`，不会创建该教师；请在专用测试环境准备，套件不会自动创建或修改账号。A 班还需一个已启用智能体，用例会临时更新并恢复它。
+
 4. `.env` 至少提供 `DEMO_SEED_PASSWORD`、`MYSQL_USER`、`MYSQL_PASSWORD`、`MYSQL_DATABASE` 和与 Compose 中 `mcp-demo` 一致的 `MCP_AUTH_TOKEN`。可选配置如下：
 
    | 变量 | 默认值 | 用途 |

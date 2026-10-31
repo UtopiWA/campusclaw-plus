@@ -13,3 +13,4 @@ uploads/
 apitest/reports/
 apitest/**/__pycache__/
 mcp-server/**/__pycache__/
+scripts/**/__pycache__/

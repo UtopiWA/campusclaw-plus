@@ -25,6 +25,7 @@ public class AsyncConfig implements WebMvcConfigurer {
         executor.setCorePoolSize(2);
         executor.setMaxPoolSize(4);
         executor.setQueueCapacity(50);
+        executor.setTaskDecorator(new com.campusclaw.observability.MdcTaskDecorator());
         executor.setWaitForTasksToCompleteOnShutdown(false);
         executor.initialize();
         return executor;
@@ -38,6 +39,7 @@ public class AsyncConfig implements WebMvcConfigurer {
         executor.setMaxPoolSize(16);
         executor.setQueueCapacity(50);
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+        executor.setTaskDecorator(new com.campusclaw.observability.MdcTaskDecorator());
         executor.setWaitForTasksToCompleteOnShutdown(false);
         executor.initialize();
         return executor;

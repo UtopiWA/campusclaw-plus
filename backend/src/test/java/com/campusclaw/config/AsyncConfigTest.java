@@ -24,6 +24,25 @@ import org.springframework.web.servlet.config.annotation.AsyncSupportConfigurer;
 class AsyncConfigTest {
 
     @Test
+    void bothExecutorsPropagateAndClearRequestContext() throws Exception {
+        var config = config();
+        for (var raw : java.util.List.of(config.materialIngestionExecutor(), config.conversationStreamExecutor())) {
+            var executor = (ThreadPoolTaskExecutor) raw;
+            try {
+                for (String id : new String[]{"request-a", "request-b"}) {
+                    org.slf4j.MDC.put("requestId", id);
+                    assertThat(executor.submit(() -> org.slf4j.MDC.get("requestId")).get(2, TimeUnit.SECONDS)).isEqualTo(id);
+                    org.slf4j.MDC.clear();
+                    assertThat(executor.submit(() -> org.slf4j.MDC.get("requestId")).get(2, TimeUnit.SECONDS)).isNull();
+                }
+            } finally {
+                org.slf4j.MDC.clear();
+                executor.shutdown();
+            }
+        }
+    }
+
+    @Test
     void configuresBoundedConversationExecutorAndMvcTimeout() {
         AppProperties properties = mock(AppProperties.class);
         when(properties.retrieval()).thenReturn(new AppProperties.Retrieval(

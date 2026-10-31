@@ -1,9 +1,9 @@
 package com.campusclaw.common;
 
-import java.sql.Connection;
-import java.sql.SQLException;
+import com.campusclaw.health.DependencyHealthService;
+import com.campusclaw.health.DeploymentVersion;
+import java.time.Instant;
 import java.util.Map;
-import javax.sql.DataSource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -11,21 +11,21 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 public class HealthController {
-    private final DataSource dataSource;
+    private final DependencyHealthService dependencies;
+    private final DeploymentVersion version;
 
-    public HealthController(DataSource dataSource) {
-        this.dataSource = dataSource;
+    public HealthController(DependencyHealthService dependencies, DeploymentVersion version) {
+        this.dependencies = dependencies;
+        this.version = version;
     }
 
     @GetMapping("/health")
-    public ResponseEntity<Map<String, String>> health() {
-        try (Connection connection = dataSource.getConnection()) {
-            if (connection.isValid(2)) {
-                return ResponseEntity.ok(Map.of("status", "ok"));
-            }
-        } catch (SQLException ignored) {
-            // The response intentionally exposes no database details.
-        }
-        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of("status", "unhealthy"));
+    public ResponseEntity<HealthResponse> health() {
+        Map<String, String> states = dependencies.snapshot();
+        boolean ready = "up".equals(states.get("database")) && "up".equals(states.get("qdrant"));
+        return ResponseEntity.status(ready ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE)
+                .body(new HealthResponse(ready ? "ok" : "unhealthy", version.value(), Instant.now(), states));
     }
+
+    public record HealthResponse(String status, String version, Instant time, Map<String, String> dependencies) { }
 }

@@ -2,6 +2,8 @@ server:
   port: ${SERVER_PORT:8080}
 
 spring:
+  main:
+    banner-mode: "off"
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}
@@ -30,6 +32,8 @@ spring:
 # 即使全局开启 debug，也不记录外部模型请求正文或响应正文。
 logging:
   level:
+    org.hibernate.SQL: INFO
+    org.hibernate.orm.jdbc.bind: INFO
     org.springframework.web.client: INFO
     org.springframework.http.converter: INFO
     org.springframework.security.oauth2.server.resource: INFO

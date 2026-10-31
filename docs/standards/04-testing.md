@@ -1,6 +1,6 @@
 # 测试、AI 评测与评审规范
 
-本规范区分自动测试、真实环境验收和人工评审。写好规范、产生报告文件或 OpenSpec 显示四类文档齐全，均不代表功能通过。当前没有统一检查脚本；下文“基线目标”在明确 Apply 后实现，不能现在执行不存在的入口并声称通过。
+本规范区分自动测试、真实环境验收和人工评审。写好规范、产生报告文件或 OpenSpec 显示四类文档齐全，均不代表功能通过。统一检查入口为 `scripts/check.py`，实际执行结果见课程总记录。
 
 ## 1. 用例来源与判定信号
 
@@ -30,14 +30,14 @@
 
 新增/修改行为要有能区分正确实现的聚焦测试；通过后按影响面扩展检查，不为纯文档变更重跑整个应用。Node/JDK/Python 工具安装与依赖下载不是离线测试本身，不承诺空机器断网即可运行。
 
-### 统一检查的基线目标（当前尚未实现）
+### 统一检查入口
 
-目标命令 `python scripts/check.py --mode unit|integration|api|all`，默认 unit：
+命令 `python scripts/check.py --mode unit|integration|api|all`，默认 unit（竖线表示四选一）：
 
 - unit：规约、Vitest/前端构建、非容器后端、Python MCP 和脚本自身测试，不使用运行期 Docker/真实模型；明确排除三个容器类。
 - integration：必须执行 `CampusClawIntegrationTest`、`QdrantIntegrationTest`、`McpSchemaMigrationTest`，使用独立容器，读取本轮报告确认计数，不能以 Docker 缺失导致的自动跳过当通过。
 - api：复用实际应用的接口套件；all 按以上三组执行，失败停止后续组并明确未执行项。
-- 目标退出码 0=选定范围全部通过，1=用例/规约失败，2=参数/工具/前置环境问题。测试专用 `TESTCONTAINERS_API_VERSION` 只接受 `1.` 加 1～2 位数字，传 Maven `-Dapi.version=...`，不影响应用配置。
+- 退出码 0=选定范围全部通过，1=用例/规约失败，2=参数/工具/前置环境问题。测试专用 `TESTCONTAINERS_API_VERSION` 只接受 `1.` 加 1～2 位数字，传 Maven `-Dapi.version=...`，不影响应用配置。原始输出位于 `backend/target/check-logs/`；脚本自身测试为 `python -m unittest discover -s scripts/tests`。接口预检复用既有 HTTP health 和 MySQL ping，失败不进入业务用例。
 
 Windows 使用 `.cmd`，其他环境使用对应 wrapper/npm；脚本须从自身路径定位仓库，不能依赖成员绝对路径。模式没选、没执行、环境不可达和历史报告均不算本轮成功。新增失败、未登记跳过阻断交付；选择非容器模式是范围声明，不是把被排除类算为已通过。
 
