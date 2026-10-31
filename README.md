@@ -9,7 +9,7 @@
 ## 文档
 
 - [项目范围与成员分工](docs/project-scope.md)：完整目标、现有缺口与分阶段交付。
-- [项目状态](docs/project-status.md)：当前实现、验收记录与待办。
+- [项目状态](docs/project-status.md)：当前实现与待办；[Class07 验收记录](docs/lesson-07/README.md)：实际检查结果。
 - [项目规则](AGENTS.md) 与 [主规格](openspec/specs/)：开发约束和已实现行为契约。
 - 工程规范：[产品](docs/standards/01-product.md)、[后端](docs/standards/02-backend.md)、[安全](docs/standards/03-security.md)、[测试与评审](docs/standards/04-testing.md)、[运维](docs/standards/05-operations.md)。
 - [接口回归说明](apitest/README.md)：测试环境、执行方式和报告。
@@ -48,7 +48,7 @@ docker compose down
 
 ## 检查与测试
 
-在仓库根目录执行，需要 Node.js 22+、Java 17、Python 3 和 OpenSpec CLI；容器检查另需 Docker Engine：
+在仓库根目录执行，需要 Node.js 22+、Java 17、Python 3.11+ 和 OpenSpec CLI；容器检查另需 Docker Engine：
 
 ```powershell
 npm.cmd --prefix frontend ci
@@ -63,4 +63,4 @@ python scripts/check.py --mode api
 
 项目保留 CampusClaw 的提交历史，新增业务通过 OpenSpec change 评审、实现与验收。运行基线实现与验收进度见[项目状态](docs/project-status.md)，日志字段、版本覆盖和回滚流程见[运维规范](docs/standards/05-operations.md)。
 
-`.env`、真实凭据与个人学习数据不得提交。演示种子仅用于本地或课堂环境，公开部署应关闭演示初始化。当前未提供 LICENSE，许可选择由团队确认。
+`.env`、真实凭据与个人学习数据不得提交。演示种子仅用于本地或课堂环境，公开部署应关闭演示初始化。项目采用 [MIT 许可证](LICENSE)。
