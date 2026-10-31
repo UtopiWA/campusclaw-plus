@@ -1,0 +1,367 @@
+package com.campusclaw.material;
+
+import com.campusclaw.common.BadRequestException;
+import com.campusclaw.common.NotFoundException;
+import com.campusclaw.common.StorageException;
+import com.campusclaw.config.AppProperties;
+import com.campusclaw.knowledge.TextParser;
+import com.campusclaw.persistence.KnowledgeEntry;
+import com.campusclaw.persistence.IndexStatus;
+import com.campusclaw.persistence.KnowledgeChunk;
+import com.campusclaw.persistence.KnowledgeEntryRepository;
+import com.campusclaw.persistence.Material;
+import com.campusclaw.persistence.MaterialRepository;
+import com.campusclaw.persistence.KnowledgeChunkRepository;
+import com.campusclaw.persistence.VectorCleanupJob;
+import com.campusclaw.persistence.VectorCleanupJobRepository;
+import com.campusclaw.persistence.UserAccount;
+import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.web.multipart.MultipartFile;
+
+/**
+ * Coordinates material metadata, parsed knowledge entries and files on disk while enforcing class isolation.
+ * Filesystem changes are paired with transaction callbacks so a database rollback does not leave orphaned files.
+ */
+@Service
+public class MaterialService {
+    private static final Logger log = LoggerFactory.getLogger(MaterialService.class);
+    private static final Set<String> SUPPORTED_EXTENSIONS = Set.of("txt", "md");
+
+    private final MaterialRepository materials;
+    private final KnowledgeEntryRepository knowledgeEntries;
+    private final TextParser textParser;
+    private final KnowledgeChunkRepository retrievalChunks;
+    private final VectorCleanupJobRepository cleanupJobs;
+    private final Path uploadRoot;
+    private final long maxUploadBytes;
+
+    public MaterialService(MaterialRepository materials,
+                           KnowledgeEntryRepository knowledgeEntries,
+                           KnowledgeChunkRepository retrievalChunks,
+                           VectorCleanupJobRepository cleanupJobs,
+                           TextParser textParser,
+                           AppProperties properties) {
+        this.materials = materials;
+        this.knowledgeEntries = knowledgeEntries;
+        this.retrievalChunks = retrievalChunks;
+        this.cleanupJobs = cleanupJobs;
+        this.textParser = textParser;
+        this.uploadRoot = Path.of(properties.uploadDir()).toAbsolutePath().normalize();
+        this.maxUploadBytes = properties.maxUploadBytes();
+    }
+
+    @Transactional(readOnly = true)
+    public List<MaterialView> list(UserAccount user) {
+        return materials.findAllByClassIdOrderByCreatedAtDesc(user.getClassId()).stream()
+                .map(MaterialView::from)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public MaterialView get(Long id, UserAccount user) {
+        return MaterialView.from(requireMaterial(id, user.getClassId()));
+    }
+
+    @Transactional(readOnly = true)
+    public MaterialChunkContext readChunkContext(Long materialId, Long chunkId, UserAccount user) {
+        Material material = requireMaterial(materialId, user.getClassId());
+        KnowledgeChunk target = retrievalChunks.findByIdAndMaterialIdAndClassIdAndIndexStatus(
+                chunkId, materialId, user.getClassId(), IndexStatus.READY).orElseThrow(NotFoundException::new);
+        List<KnowledgeChunk> all = retrievalChunks.findAllByMaterialIdAndClassIdOrderByChunkIndex(
+                materialId, user.getClassId()).stream()
+                .filter(chunk -> chunk.getIndexStatus() == IndexStatus.READY)
+                .toList();
+        int targetPosition = -1;
+        for (int index = 0; index < all.size(); index++) {
+            if (all.get(index).getId().equals(target.getId())) {
+                targetPosition = index;
+                break;
+            }
+        }
+        if (targetPosition < 0) {
+            throw new NotFoundException();
+        }
+        int from = Math.max(0, targetPosition - 1);
+        int to = Math.min(all.size(), targetPosition + 2);
+        List<MaterialChunkContext.Neighbor> neighbors = all.subList(from, to).stream()
+                .map(chunk -> new MaterialChunkContext.Neighbor(chunk.getId(), chunk.getChunkIndex(),
+                        chunk.getChunkText(), chunk.getId().equals(target.getId())))
+                .toList();
+        return new MaterialChunkContext(materialId, material.getTitle(), target.getId(), target.getChunkIndex(),
+                target.getStartOffset(), target.getEndOffset(), target.getChunkText(), neighbors);
+    }
+
+    @Transactional(readOnly = true)
+    public MaterialFile readFile(Long id, UserAccount user) {
+        Material material = requireMaterial(id, user.getClassId());
+        // Resolve the persisted relative path inside the current class directory before touching the filesystem.
+        Path storedFile = resolveStoredPath(material.getStoredPath(), user.getClassId());
+        if (storedFile == null || !Files.isRegularFile(storedFile, LinkOption.NOFOLLOW_LINKS)) {
+            throw new NotFoundException();
+        }
+        try {
+            return new MaterialFile(material.getOriginalFilename(), Files.readAllBytes(storedFile));
+        } catch (IOException exception) {
+            throw new StorageException("Could not read material file", exception);
+        }
+    }
+
+    @Transactional
+    public MaterialView update(Long id, String title, UserAccount teacher) {
+        String cleanTitle = title == null ? "" : title.trim();
+        if (cleanTitle.isBlank() || cleanTitle.length() > 255) {
+            throw new BadRequestException("Title must contain 1 to 255 characters");
+        }
+        Material material = requireMaterial(id, teacher.getClassId());
+        material.setTitle(cleanTitle);
+        return MaterialView.from(materials.saveAndFlush(material));
+    }
+
+    @Transactional
+    public MaterialView upload(MultipartFile file, UserAccount teacher) {
+        UploadContent content = validateUpload(file);
+        Path temp = null;
+        Path destination = null;
+        try {
+            // 请求线程只提交原文件和材料元数据，正文解析由提交后的后台任务执行。
+            Path tempDir = uploadRoot.resolve(".tmp");
+            Path classDir = uploadRoot.resolve(teacher.getClassId().toString());
+            Files.createDirectories(tempDir);
+            Files.createDirectories(classDir);
+            temp = Files.createTempFile(tempDir, "upload-", ".tmp");
+            long copied;
+            try (var input = file.getInputStream()) {
+                copied = Files.copy(input, temp, StandardCopyOption.REPLACE_EXISTING);
+            }
+            if (copied < 1 || copied > maxUploadBytes) {
+                throw new BadRequestException("File must be non-empty and within the configured size limit");
+            }
+
+            String storedName = UUID.randomUUID() + "." + content.extension();
+            destination = classDir.resolve(storedName).normalize();
+            requireWithinRoot(destination);
+
+            Material material = materials.saveAndFlush(new Material(
+                    teacher.getClassId(), content.title(), content.originalFilename(), null, teacher.getId()));
+
+            // Publish the file atomically, then register rollback cleanup for the remaining transaction lifetime.
+            moveAtomically(temp, destination);
+            material.setStoredPath(toStoredPath(destination));
+            material.setFileSizeBytes(copied);
+            materials.saveAndFlush(material);
+            registerUploadCleanup(temp, destination);
+            return MaterialView.from(material);
+        } catch (IOException exception) {
+            deleteQuietly(temp);
+            deleteQuietly(destination);
+            throw new StorageException("Could not store uploaded file", exception);
+        } catch (RuntimeException exception) {
+            deleteQuietly(temp);
+            deleteQuietly(destination);
+            throw exception;
+        }
+    }
+
+    @Transactional
+    public void parseStoredMaterial(Long materialId, Long classId) {
+        Material material = requireMaterial(materialId, classId);
+        // 手动重试和后台恢复可重复调用；已有正文时不得再次插入相同知识条目。
+        if (!knowledgeEntries.findAllByMaterialIdAndClassIdOrderByChunkIndex(materialId, classId).isEmpty()) {
+            return;
+        }
+        Path storedFile = resolveStoredPath(material.getStoredPath(), classId);
+        if (storedFile == null || !Files.isRegularFile(storedFile, LinkOption.NOFOLLOW_LINKS)) {
+            throw new StorageException("Could not read material file",
+                    new IOException("Stored material file is missing"));
+        }
+        try {
+            List<String> chunks = textParser.parse(Files.readAllBytes(storedFile));
+            for (int index = 0; index < chunks.size(); index++) {
+                knowledgeEntries.save(new KnowledgeEntry(materialId, classId, index, chunks.get(index)));
+            }
+            knowledgeEntries.flush();
+        } catch (IOException exception) {
+            throw new StorageException("Could not read material file", exception);
+        }
+    }
+
+    @Transactional
+    public void delete(Long id, UserAccount teacher) {
+        Material material = requireMaterial(id, teacher.getClassId());
+        String pointIds = retrievalChunks.findAllByMaterialIdAndClassIdOrderByChunkIndex(id, teacher.getClassId())
+                .stream().map(chunk -> chunk.getId().toString())
+                .collect(java.util.stream.Collectors.joining(",", "[", "]"));
+        Path original = resolveStoredPath(material.getStoredPath());
+        Path quarantined = null;
+        try {
+            if (original != null && Files.exists(original)) {
+                // Quarantine first so the file can be restored if the following database delete rolls back.
+                Path trashDir = uploadRoot.resolve(".trash");
+                Files.createDirectories(trashDir);
+                quarantined = trashDir.resolve(UUID.randomUUID() + ".deleted");
+                moveAtomically(original, quarantined);
+                registerDeleteCompensation(original, quarantined);
+            }
+            materials.delete(material);
+            materials.flush();
+            cleanupJobs.saveAndFlush(new VectorCleanupJob(id, pointIds));
+        } catch (IOException exception) {
+            restoreQuietly(quarantined, original);
+            throw new StorageException("Could not delete material file", exception);
+        } catch (RuntimeException exception) {
+            restoreQuietly(quarantined, original);
+            throw exception;
+        }
+    }
+
+    private Material requireMaterial(Long id, Long classId) {
+        // The combined lookup deliberately returns 404 for both missing and cross-class records.
+        return materials.findByIdAndClassId(id, classId).orElseThrow(NotFoundException::new);
+    }
+
+    private UploadContent validateUpload(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new BadRequestException("File must not be empty");
+        }
+        if (file.getSize() > maxUploadBytes) {
+            throw new BadRequestException("File exceeds the configured size limit");
+        }
+        String original = safeOriginalFilename(file.getOriginalFilename());
+        int dot = original.lastIndexOf('.');
+        if (dot <= 0 || dot == original.length() - 1) {
+            throw new BadRequestException("Only .txt and .md files are supported");
+        }
+        String extension = original.substring(dot + 1).toLowerCase(Locale.ROOT);
+        if (!SUPPORTED_EXTENSIONS.contains(extension)) {
+            throw new BadRequestException("Only .txt and .md files are supported");
+        }
+        String title = original.substring(0, dot).trim();
+        if (title.isBlank()) {
+            title = "未命名材料";
+        }
+        return new UploadContent(original, title, extension);
+    }
+
+    private String safeOriginalFilename(String value) {
+        // Browsers may submit a client-side path; retain only the basename and reject unsafe control characters.
+        String candidate = value == null ? "" : value.replace('\\', '/');
+        int slash = candidate.lastIndexOf('/');
+        candidate = slash >= 0 ? candidate.substring(slash + 1) : candidate;
+        if (candidate.isBlank() || candidate.length() > 255
+                || candidate.chars().anyMatch(Character::isISOControl)) {
+            throw new BadRequestException("Invalid original filename");
+        }
+        return candidate;
+    }
+
+    private void moveAtomically(Path source, Path destination) throws IOException {
+        try {
+            Files.move(source, destination, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException exception) {
+            throw new IOException("Upload directory must support atomic moves", exception);
+        }
+    }
+
+    private String toStoredPath(Path path) {
+        return uploadRoot.relativize(path).toString().replace('\\', '/');
+    }
+
+    private Path resolveStoredPath(String storedPath) {
+        if (storedPath == null || storedPath.isBlank()) {
+            return null;
+        }
+        Path resolved = uploadRoot.resolve(storedPath).normalize();
+        requireWithinRoot(resolved);
+        return resolved;
+    }
+
+    private Path resolveStoredPath(String storedPath, Long classId) {
+        Path resolved = resolveStoredPath(storedPath);
+        if (resolved == null) {
+            return null;
+        }
+        // A valid upload-root path is still rejected when it belongs to another class directory.
+        Path classRoot = uploadRoot.resolve(classId.toString()).normalize();
+        if (!resolved.startsWith(classRoot)) {
+            throw new NotFoundException();
+        }
+        return resolved;
+    }
+
+    private void requireWithinRoot(Path path) {
+        if (!path.startsWith(uploadRoot)) {
+            throw new BadRequestException("Invalid storage path");
+        }
+    }
+
+    private void registerUploadCleanup(Path temp, Path destination) {
+        // Database rollback must remove a file that was already atomically published.
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                deleteQuietly(temp);
+                if (status != STATUS_COMMITTED) {
+                    deleteQuietly(destination);
+                }
+            }
+        });
+    }
+
+    private void registerDeleteCompensation(Path original, Path quarantined) {
+        // Commit makes quarantine permanent; rollback restores the original file in place.
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status == STATUS_COMMITTED) {
+                    deleteQuietly(quarantined);
+                } else {
+                    restoreQuietly(quarantined, original);
+                }
+            }
+        });
+    }
+
+    private void deleteQuietly(Path path) {
+        if (path == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(path);
+        } catch (IOException exception) {
+            log.warn("Could not clean up file {}", path, exception);
+        }
+    }
+
+    private void restoreQuietly(Path source, Path destination) {
+        if (source == null || destination == null || !Files.exists(source)) {
+            return;
+        }
+        try {
+            Files.createDirectories(destination.getParent());
+            Files.move(source, destination, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException exception) {
+            log.error("Could not restore quarantined file {}", source, exception);
+        }
+    }
+
+    private record UploadContent(String originalFilename, String title, String extension) {
+    }
+
+    public record MaterialFile(String filename, byte[] content) {
+    }
+}

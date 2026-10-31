@@ -1,0 +1,111 @@
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${MYSQL_HOST_PORT:-3306}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-campusclaw}
+      MYSQL_USER: ${MYSQL_USER:-campusclaw}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci", "--ngram-token-size=2"]
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  qdrant:
+    image: qdrant/qdrant:v1.15.4
+    restart: unless-stopped
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/6333'"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  mcp-demo:
+    build:
+      context: ./mcp-server
+    restart: unless-stopped
+    environment:
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN}
+      MCP_PORT: 8090
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8090/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-campusclaw}?useUnicode=true&characterEncoding=utf8&connectionTimeZone=UTC
+      DB_USERNAME: ${MYSQL_USER:-campusclaw}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+      UPLOAD_DIR: /app/uploads
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-2097152}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET}
+      AUTH_JWT_TTL: ${AUTH_JWT_TTL:-PT8H}
+      DEMO_SEED_ENABLED: ${DEMO_SEED_ENABLED:-false}
+      DEMO_SEED_PASSWORD: ${DEMO_SEED_PASSWORD}
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-campusclaw_chunks}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL}
+      EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION}
+      CHAT_BASE_URL: ${CHAT_BASE_URL}
+      CHAT_API_KEY: ${CHAT_API_KEY}
+      CHAT_MODEL: ${CHAT_MODEL}
+      CHAT_REASONING_EFFORT: ${CHAT_REASONING_EFFORT-none}
+      RETRIEVAL_CONNECT_TIMEOUT: ${RETRIEVAL_CONNECT_TIMEOUT:-3s}
+      RETRIEVAL_READ_TIMEOUT: ${RETRIEVAL_READ_TIMEOUT:-30s}
+      RETRIEVAL_VECTOR_THRESHOLD: ${RETRIEVAL_VECTOR_THRESHOLD:-0.35}
+      RETRIEVAL_ANSWER_STRONG_VECTOR_THRESHOLD: ${RETRIEVAL_ANSWER_STRONG_VECTOR_THRESHOLD:-0.55}
+      RETRIEVAL_ANSWER_CORROBORATED_VECTOR_THRESHOLD: ${RETRIEVAL_ANSWER_CORROBORATED_VECTOR_THRESHOLD:-0.45}
+      RETRIEVAL_RRF_K: ${RETRIEVAL_RRF_K:-60}
+      MCP_TOKEN_ENCRYPTION_KEY: ${MCP_TOKEN_ENCRYPTION_KEY}
+      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-mcp-demo}
+      MCP_CONNECT_TIMEOUT: ${MCP_CONNECT_TIMEOUT:-3s}
+      MCP_READ_TIMEOUT: ${MCP_READ_TIMEOUT:-10s}
+    volumes:
+      - uploads-data:/app/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      mcp-demo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  mysql-data:
+  uploads-data:
+  qdrant-data:
