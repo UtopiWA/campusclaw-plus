@@ -87,7 +87,7 @@
 
 | 项目 | 记录 |
 | --- | --- |
-| 候选提交 | 本次实现提交（提交哈希见本次交付记录；实现提交之后的文档提交仅补记录） |
+| 候选提交 | `41fb5da1e41141c63c8fddac10a91b74ef3f8ad8`（实现提交；后续文档提交仅补记录） |
 | 环境类别 | Windows 11；JDK 17 Corretto 17.0.10；Node 20.19；Python 3.10.6；独立 MySQL 8.0.36（3307）；Qdrant 1.15.4；便携 RabbitMQ 4.4.0 + Erlang 27.3.4.19（5672/15672）；Web 8081；worker 随机端口；Vite 8080 |
 | 模型模式 | 真实网关 `course-chat` / `course-embedding`（未使用替身伪造分数） |
 | Docker/Compose | **未运行**：本机无 Docker；Compose 已加入 RabbitMQ/worker 配置，但本轮以原生进程完成验收。Compose 启动、镜像构建和 Testcontainers 未由本轮独立验证。 |
