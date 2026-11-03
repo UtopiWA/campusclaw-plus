@@ -1,6 +1,6 @@
 # 当前项目状态
 
-最后核对：2026-10-31。本文件区分已验收的 CampusClaw 继承能力与 CampusClaw-Plus 团队启动工作；完整目标和分工见 [项目范围](project-scope.md)。
+最后核对：2026-11-03。本文件区分已验收的 CampusClaw 继承能力与 CampusClaw-Plus 团队启动工作；完整目标和分工见 [项目范围](project-scope.md)。
 
 ## 团队启动状态
 
@@ -15,15 +15,18 @@
 | 五类工程规范与工具读取规则 | `docs/standards/01-product.md`～`05-operations.md` 已成文；AGENTS 按范围加载，已新增团队检查技能；由另一成员审核规则与文档 |
 | 团队基线 change | 15/15 项完成；另一成员完成功能复现、审核并归档 |
 | 收尾流程 | 已完成：另一成员原生进程复现、审核、同步规格并归档；Compose/Testcontainers 沿用发起方结果 |
+| Class08 异步作业批改 | 变更文档与审核规则已建，待评审与实施；未实现 |
 | 诊断、计划、推荐与班级分析 | 规划中，未实现 |
 
 按最新决定，不再追加无历史会话、规范破坏试验、回滚和全历史/镜像扫描。已取消项未记为通过；审核结论沿用[课程验收记录](lesson-07/README.md)，不新增台账。
+
+当前活动 change：[2026-11-03-add-async-assignment-grading](../openspec/changes/2026-11-03-add-async-assignment-grading/proposal.md) 已完成 proposal/design/specs/tasks、审核规则和验收骨架，待评审与实施。异步批改、消息代理和相关页面尚未实现，不记为已有能力；范围调整和交付边界见该 change。
 
 ## 实现范围
 
 已实现 Bearer JWT、教师/学生角色与服务端班级隔离、材料管理与异步索引、keyword/vector/hybrid 检索、问答采信、技能与智能体配置、私人持久化流式会话、MCP 管理/调用/审计、OpenAPI 以及 Python 接口回归工具。
 
-前端使用 `/materials`、教师 `/assistants` 和 `/conversations`，旧 `/search` 重定向到材料页。作业目前只有早期数据骨架；发布、提交、批改、教师复核、错题、学习诊断与计划等业务尚未形成完整链路。MCP 调用审计已可用，不等于全站审计与学情统计已完成。
+前端使用 `/materials`、教师 `/assistants` 和 `/conversations`，旧 `/search` 重定向到材料页。作业目前只有早期数据骨架；发布、提交、批改、教师复核、错题、学习诊断与计划等业务尚未形成完整链路。Class08 change 计划先补文本作答、异步批改和结果查询，待评审实施，不代表已实现。MCP 调用审计已可用，不等于全站审计与学情统计已完成。
 
 ## 归档与验收状态
 
