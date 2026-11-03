@@ -31,6 +31,23 @@ services:
       retries: 20
       start_period: 10s
 
+  rabbitmq:
+    image: rabbitmq:4.4.0-management
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    ports:
+      - "127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
   mcp-demo:
     build:
       context: ./mcp-server
@@ -81,12 +98,21 @@ services:
       MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-mcp-demo}
       MCP_CONNECT_TIMEOUT: ${MCP_CONNECT_TIMEOUT:-3s}
       MCP_READ_TIMEOUT: ${MCP_READ_TIMEOUT:-10s}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      GRADING_WORKER_ENABLED: "false"
+      GRADING_PUBLISHER_ENABLED: "true"
+      GRADING_RECOVERY_ENABLED: "false"
     volumes:
       - uploads-data:/app/uploads
     depends_on:
       mysql:
         condition: service_healthy
       qdrant:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
       mcp-demo:
         condition: service_healthy
@@ -96,6 +122,54 @@ services:
       timeout: 10s
       retries: 10
       start_period: 30s
+
+  grading-worker:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: worker
+      DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-campusclaw}?useUnicode=true&characterEncoding=utf8&connectionTimeZone=UTC
+      DB_USERNAME: ${MYSQL_USER:-campusclaw}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+      UPLOAD_DIR: /app/uploads
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET}
+      DEMO_SEED_ENABLED: "false"
+      DEMO_SEED_PASSWORD: ${DEMO_SEED_PASSWORD}
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-campusclaw_chunks}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL}
+      EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION}
+      CHAT_BASE_URL: ${CHAT_BASE_URL}
+      CHAT_API_KEY: ${CHAT_API_KEY}
+      CHAT_MODEL: ${CHAT_MODEL}
+      CHAT_REASONING_EFFORT: ${CHAT_REASONING_EFFORT-none}
+      RETRIEVAL_CONNECT_TIMEOUT: ${RETRIEVAL_CONNECT_TIMEOUT:-3s}
+      RETRIEVAL_READ_TIMEOUT: ${RETRIEVAL_READ_TIMEOUT:-30s}
+      RETRIEVAL_VECTOR_THRESHOLD: ${RETRIEVAL_VECTOR_THRESHOLD:-0.35}
+      RETRIEVAL_ANSWER_STRONG_VECTOR_THRESHOLD: ${RETRIEVAL_ANSWER_STRONG_VECTOR_THRESHOLD:-0.55}
+      RETRIEVAL_ANSWER_CORROBORATED_VECTOR_THRESHOLD: ${RETRIEVAL_ANSWER_CORROBORATED_VECTOR_THRESHOLD:-0.45}
+      RETRIEVAL_RRF_K: ${RETRIEVAL_RRF_K:-60}
+      MCP_TOKEN_ENCRYPTION_KEY: ${MCP_TOKEN_ENCRYPTION_KEY}
+      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-mcp-demo}
+      MCP_CONNECT_TIMEOUT: ${MCP_CONNECT_TIMEOUT:-3s}
+      MCP_READ_TIMEOUT: ${MCP_READ_TIMEOUT:-10s}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      GRADING_WORKER_ENABLED: "true"
+      GRADING_PUBLISHER_ENABLED: "false"
+      GRADING_RECOVERY_ENABLED: "true"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
   frontend:
     build:
@@ -111,3 +185,4 @@ volumes:
   mysql-data:
   uploads-data:
   qdrant-data:
+  rabbitmq-data:

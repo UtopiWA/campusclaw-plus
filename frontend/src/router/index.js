@@ -3,6 +3,7 @@ import LoginView from '../views/LoginView.vue'
 import MaterialsView from '../views/MaterialsView.vue'
 import AgentConfigView from '../views/AgentConfigView.vue'
 import ConversationsView from '../views/ConversationsView.vue'
+import AssignmentsView from '../views/AssignmentsView.vue'
 import { authState, loadCurrentUser } from '../services/auth.js'
 
 const router = createRouter({
@@ -14,6 +15,7 @@ const router = createRouter({
     { path: '/search', redirect: '/materials' },
     { path: '/assistants', component: AgentConfigView, meta: { requiresAuth: true, role: 'teacher' } },
     { path: '/conversations/:id?', component: ConversationsView, meta: { requiresAuth: true } },
+    { path: '/assignments', component: AssignmentsView, meta: { requiresAuth: true } },
     { path: '/:pathMatch(.*)*', redirect: '/materials' },
   ],
 })

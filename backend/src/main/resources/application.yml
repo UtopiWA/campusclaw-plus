@@ -28,6 +28,21 @@ spring:
     multipart:
       max-file-size: ${MAX_UPLOAD_BYTES:2097152}
       max-request-size: ${MAX_UPLOAD_BYTES:2097152}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: ${RABBITMQ_VHOST:/}
+    publisher-confirm-type: correlated
+    template:
+      mandatory: true
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: ${GRADING_PREFETCH:1}
+        concurrency: ${GRADING_CONCURRENCY:1}
+        max-concurrency: ${GRADING_CONCURRENCY:1}
 
 # 即使全局开启 debug，也不记录外部模型请求正文或响应正文。
 logging:
@@ -77,3 +92,23 @@ app:
     allowed-hosts: ${MCP_ALLOWED_HOSTS:mcp-demo}
     connect-timeout: ${MCP_CONNECT_TIMEOUT:3s}
     read-timeout: ${MCP_READ_TIMEOUT:10s}
+  grading:
+    worker-enabled: ${GRADING_WORKER_ENABLED:false}
+    publisher-enabled: ${GRADING_PUBLISHER_ENABLED:true}
+    recovery-enabled: ${GRADING_RECOVERY_ENABLED:false}
+    max-attempts: ${GRADING_MAX_ATTEMPTS:5}
+    backoff-base: ${GRADING_BACKOFF_BASE:5s}
+    backoff-multiplier: ${GRADING_BACKOFF_MULTIPLIER:2}
+    backoff-jitter: ${GRADING_BACKOFF_JITTER:0.2}
+    backoff-max: ${GRADING_BACKOFF_MAX:5m}
+    stale-running-timeout: ${GRADING_STALE_TIMEOUT:90s}
+    outbox-retry-delay: ${GRADING_OUTBOX_RETRY_DELAY:5s}
+    outbox-batch-size: ${GRADING_OUTBOX_BATCH_SIZE:20}
+    confirm-timeout: ${GRADING_CONFIRM_TIMEOUT:5s}
+    prompt-version: ${GRADING_PROMPT_VERSION:v1}
+    exchange: ${GRADING_EXCHANGE:grading.events}
+    task-queue: ${GRADING_TASK_QUEUE:grading.tasks}
+    dead-letter-queue: ${GRADING_DLQ:grading.dlq}
+    dispatch-routing-key: ${GRADING_DISPATCH_KEY:grading.dispatch}
+    retry-routing-key: ${GRADING_RETRY_KEY:grading.retry}
+    dead-letter-routing-key: ${GRADING_DLQ_KEY:grading.dead-letter}

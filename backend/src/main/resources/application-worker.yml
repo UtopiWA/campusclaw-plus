@@ -1,0 +1,10 @@
+server:
+  port: ${WORKER_PORT:0}
+
+app:
+  demo-seed:
+    enabled: false
+  grading:
+    worker-enabled: true
+    publisher-enabled: false
+    recovery-enabled: true

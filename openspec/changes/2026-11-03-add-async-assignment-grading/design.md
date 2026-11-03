@@ -23,7 +23,7 @@
 
 ### 2. 独立消息代理与执行形态
 
-选择 **RabbitMQ**（持久化队列、发布确认、手动 ACK、死信）。Compose 新增 `rabbitmq` 服务和 `rabbitmq-data` 卷；Web 应用负责提交接口和发件箱投递；新增独立 `grading-worker` 服务，使用同一后端镜像、不同 profile，禁用 Web 端口，只消费队列和执行恢复调度。停止 worker 不影响 Web、MySQL、RabbitMQ 和投递器；任务保留在队列/数据库中。仅使用 `@Async` 或进程内线程池不满足本课交付形态。
+选择 **RabbitMQ**（持久化队列、发布确认、手动 ACK、死信）。Compose 新增 `rabbitmq` 服务和 `rabbitmq-data` 卷；Web 应用负责提交接口和发件箱投递；新增独立 `grading-worker` 服务，使用同一后端镜像、不同 profile，不暴露业务端口（为复用 Spring Security/应用上下文绑定随机端口），只消费队列和执行恢复调度。停止 worker 不影响 Web、MySQL、RabbitMQ 和投递器；任务保留在队列/数据库中。仅使用 `@Async` 或进程内线程池不满足本课交付形态。
 
 不使用 Kafka：本课只需要一个持久化工作队列、确认、重投和死信，RabbitMQ 的运行与排障成本更低。不使用数据库任务表轮询替代代理：本课明确要求新增代理；数据库只承担业务状态、发件箱调度和恢复，不替代消息分发。
 
@@ -131,7 +131,7 @@ RabbitMQ 拓扑：持久化 direct exchange `grading.events`；`grading.tasks` �
 - `AGENTS.md` 增加 AI 生成代码的审核/合入约束并指向 `docs/standards/04-testing.md`。
 - `04-testing.md` 增加七类核查清单、七维评审表、逐文件“可用/待修改/风险无效”结论、高风险（并发/事务/一致性）复核、合入顺序和批量扫描要求。
 - 新增 `docs/lesson-08/README.md`（三条判据、观测、环境/版本/标签）和 `review.md`（自审、同伴评审、问题整改与复核）。文档自包含，不引用仓库外课件。
-- 扫描入口固定为可执行命令：Java Checkstyle/SpotBugs/OWASP dependency-check，前端 ESLint + `npm audit`，Python Ruff + `pip-audit`，数据库 `EXPLAIN` + 人工索引/N+1 复核；新增 `scripts/scan.py`（或等价固定入口）并在 lesson-08 记录工具、范围、结果和人工处置。未接入或未执行的扫描记为未完成，不写成已通过。
+- 扫描入口固定为可执行命令：Java Checkstyle/SpotBugs/OSV（OWASP dependency-check 为可选补充），前端 ESLint + `npm audit`，Python Ruff + `pip-audit`，数据库 `EXPLAIN` + 人工索引/N+1 复核；新增 `scripts/scan.py` 和 `scripts/osv_scan.py` 并在 lesson-08 记录工具、范围、结果和人工处置。未接入或未执行的扫描记为未完成，不写成已通过。
 - 合入顺序：AI 初稿注明范围 → 开发者自审/整改 → 测试与扫描 → 另一成员交叉评审和复核 → 证据入库 → 合入。代理不能代签成员结论。
 
 ### 15. 工作拆分

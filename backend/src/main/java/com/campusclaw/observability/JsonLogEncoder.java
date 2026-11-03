@@ -11,7 +11,9 @@ import java.util.Set;
 /** 只输出固定字段，避免第三方异常和业务消息泄漏请求内容或凭据。 */
 public class JsonLogEncoder extends EncoderBase<ILoggingEvent> {
     private static final ObjectMapper JSON = new ObjectMapper();
-    private static final Set<String> FIELDS = Set.of("method", "path", "status", "durationMs", "failureCode");
+    private static final String GRADING_LOGGER = "com.campusclaw.grading.GradingLog";
+    private static final Set<String> FIELDS = Set.of(
+            "method", "path", "status", "durationMs", "failureCode", "taskId", "attempts");
 
     @Override public byte[] headerBytes() { return new byte[0]; }
     @Override public byte[] footerBytes() { return new byte[0]; }
@@ -25,9 +27,11 @@ public class JsonLogEncoder extends EncoderBase<ILoggingEvent> {
         row.put("event", "application_log");
         String id = event.getMDCPropertyMap().get("requestId");
         row.put("requestId", id != null && id.matches("[A-Za-z0-9_-]{1,64}") ? id : null);
-        if (RequestLoggingFilter.class.getName().equals(event.getLoggerName()) && event.getKeyValuePairs() != null) {
+        String logger = event.getLoggerName();
+        if ((RequestLoggingFilter.class.getName().equals(logger) || GRADING_LOGGER.equals(logger))
+                && event.getKeyValuePairs() != null) {
             for (var pair : event.getKeyValuePairs()) {
-                if ("event".equals(pair.key) && "http_request_completed".equals(pair.value)) {
+                if ("event".equals(pair.key) && pair.value != null) {
                     row.put("event", pair.value);
                 } else if (FIELDS.contains(pair.key)) {
                     row.put(pair.key, pair.value);

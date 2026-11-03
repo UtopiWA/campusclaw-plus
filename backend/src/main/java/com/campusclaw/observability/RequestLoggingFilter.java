@@ -58,7 +58,11 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
                     state.finish();
                 }
             } finally {
-                if (previous == null) MDC.remove("requestId"); else MDC.put("requestId", previous);
+                if (previous == null) {
+                    MDC.remove("requestId");
+                } else {
+                    MDC.put("requestId", previous);
+                }
             }
         }
     }
@@ -96,7 +100,11 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
                 if (failed) event.addKeyValue("failureCode", "REQUEST_FAILED");
                 event.log("http_request_completed");
             } finally {
-                if (previous == null) MDC.remove("requestId"); else MDC.put("requestId", previous);
+                if (previous == null) {
+                    MDC.remove("requestId");
+                } else {
+                    MDC.put("requestId", previous);
+                }
             }
         }
 

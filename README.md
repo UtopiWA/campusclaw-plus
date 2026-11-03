@@ -2,9 +2,9 @@
 
 基于 CampusClaw 扩展的智能学习诊断与个性化辅导系统，面向班级教学中的教师与学生。
 
-**当前可用：** 登录与班级隔离、教学材料管理与检索、技能和智能体配置、持久化流式对话、MCP 工具调用与审计。
+**当前可用：** 登录与班级隔离、教学材料管理与检索、技能和智能体配置、持久化流式对话、MCP 工具调用与审计、文本作业异步批改。
 
-**扩展目标：** 知识图谱与掌握度画像、个性化学习计划、自适应练习、班级共性错误分析，以及诊断、规划和辅导角色的协作。相关业务尚未实现，当前处于团队启动阶段。
+**扩展目标：** 知识图谱与掌握度画像、个性化学习计划、自适应练习、班级共性错误分析，以及诊断、规划和辅导角色的协作。相关业务尚未实现；团队基线已归档，Class08 异步批改已完成本机验收，待成员评审/归档。
 
 ## 文档
 
@@ -26,7 +26,7 @@ Vue 3 / Vite、Java 17 / Spring Boot 3、MySQL 8、Qdrant、Python MCP 服务，
 Copy-Item .env.example .env
 ```
 
-编辑 `.env`，设置数据库口令、JWT 密钥、模型地址/密钥/名称、实际嵌入维度和 MCP 凭据。其中 `MCP_TOKEN_ENCRYPTION_KEY` 为 Base64 编码的 32 字节随机密钥，可用 `openssl rand -base64 32` 生成。
+编辑 `.env`，设置数据库口令、JWT 密钥、模型地址/密钥/名称、实际嵌入维度、MCP 凭据和 RabbitMQ 用户/口令。其中 `MCP_TOKEN_ENCRYPTION_KEY` 为 Base64 编码的 32 字节随机密钥，可用 `openssl rand -base64 32` 生成。
 
 空数据库首次演示时，将 `DEMO_SEED_ENABLED=true` 并设置 `DEMO_SEED_PASSWORD`，以创建演示账号；默认关闭种子时不会自动创建账号。演示账号为 `teacher-a`、`student-a1`、`student-b1`，口令由该环境变量提供。
 
@@ -46,6 +46,17 @@ docker compose down
 
 材料、数据库和向量保存在 Docker volumes 中；`docker compose down -v` 会删除这些数据。MCP 示例服务只在 Compose 内部网络提供，教师在助手配置页登记 `http://mcp-demo:8090`，使用与 `MCP_AUTH_TOKEN` 相同的 Token。
 
+### 异步作业批改
+
+Compose 同时启动 RabbitMQ 和独立 `grading-worker`。教师在 `/assignments` 创建带评分依据的文本作业，学生提交后收到 202 和任务标识；后台 worker 调用模型做分项判断，服务端按评分依据确定性计分。任务状态通过 `/api/grading/tasks/{taskId}` 只读查询，页面轮询到终态停止。
+
+```powershell
+docker compose stop grading-worker   # 停消费者，任务保留并可查询为 pending
+docker compose start grading-worker  # 恢复后自动完成，无需重新提交
+```
+
+RabbitMQ management 仅绑定本机：<http://127.0.0.1:15672>。三条核心判据、队列/死信观测和失败记录见 [Class08 验收记录](docs/lesson-08/README.md)。
+
 ## 检查与测试
 
 在仓库根目录执行，需要 Node.js 22+、Java 17、Python 3.11+ 和 OpenSpec CLI；容器检查另需 Docker Engine：
@@ -55,9 +66,12 @@ npm.cmd --prefix frontend ci
 python scripts/check.py
 python scripts/check.py --mode integration
 python scripts/check.py --mode api
+python scripts/scan.py
 ```
 
-默认 `unit` 检查规约、前端、非容器后端及 Python；`integration` 使用独立 MySQL/Qdrant 容器。`api` 需按 [接口说明](apitest/README.md) 准备运行中应用、账号和材料；`all` 顺序执行三组，失败即停止。退出码：0 通过、1 检查失败、2 参数/环境缺失。原始输出在 `backend/target/check-logs/`，后端报告在 `backend/target/surefire-reports/`，接口报告在 `apitest/reports/`。
+默认 `unit` 检查规约、前端、非容器后端及 Python；`integration` 使用独立 MySQL/Qdrant 容器。`api` 需按 [接口说明](apitest/README.md) 准备运行中应用、账号和材料；`all` 顺序执行三组，失败即停止。`scan.py` 执行代码规范、依赖漏洞和静态检查，Java 依赖默认使用 OSV，OWASP 为可选补充。退出码：0 通过、1 检查失败、2 参数/环境缺失。原始输出在 `backend/target/check-logs/`，后端报告在 `backend/target/surefire-reports/`，接口报告在 `apitest/reports/`。
+
+Class08 异步批改的三条判据和故障验收使用 `python scripts/lesson08_acceptance.py`，需要运行中的 Web、worker 和 RabbitMQ；执行记录见 [Class08 验收记录](docs/lesson-08/README.md)。
 
 ## 开发与安全
 

@@ -10,10 +10,18 @@ public class MdcTaskDecorator implements TaskDecorator {
         return () -> {
             var previous = MDC.getCopyOfContextMap();
             try {
-                if (captured == null) MDC.clear(); else MDC.setContextMap(captured);
+                if (captured == null) {
+                    MDC.clear();
+                } else {
+                    MDC.setContextMap(captured);
+                }
                 task.run();
             } finally {
-                if (previous == null) MDC.clear(); else MDC.setContextMap(previous);
+                if (previous == null) {
+                    MDC.clear();
+                } else {
+                    MDC.setContextMap(previous);
+                }
             }
         };
     }

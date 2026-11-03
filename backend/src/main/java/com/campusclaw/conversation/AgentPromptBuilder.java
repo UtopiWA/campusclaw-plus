@@ -4,7 +4,6 @@ import com.campusclaw.gateway.ChatGateway;
 import com.campusclaw.persistence.Assistant;
 import com.campusclaw.persistence.Skill;
 import com.campusclaw.mcp.McpTurnResult;
-import com.campusclaw.mcp.ToolCallSummary;
 import com.campusclaw.retrieval.RetrievalHit;
 import java.util.ArrayList;
 import java.util.List;

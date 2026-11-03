@@ -1,6 +1,6 @@
 # CampusClaw-Plus 团队项目范围
 
-更新日期：2026-11-03。状态：团队基线已实现并归档；当前另有 [Class08 异步作业批改 change](../openspec/changes/2026-11-03-add-async-assignment-grading/proposal.md) 处于设计/评审阶段，尚未实现。学习诊断、计划等业务仍为扩展目标，具体状态见[项目状态](project-status.md)。
+更新日期：2026-11-04。状态：团队基线已实现并归档；[Class08 异步作业批改 change](../openspec/changes/2026-11-03-add-async-assignment-grading/proposal.md) 已实现文本作答、异步批改和结果查询并完成本机验收，待成员 A 评审/归档。学习诊断、计划等业务仍为扩展目标，具体状态见[项目状态](project-status.md)。
 
 ## 1. 项目定位与价值
 
@@ -81,7 +81,7 @@
 
 第一业务增量先实现这条链路的上游：**教师布置有限题型任务 → 本班学生提交 → 系统形成可追溯判题结果 → 教师查看或复核**。该增量是可独立验收的起点，不是整个项目的完成标准。
 
-当前 [2026-11-03-add-async-assignment-grading change](../openspec/changes/2026-11-03-add-async-assignment-grading/proposal.md) 提案先把批改以异步模型辅助评分、确定性计分和结果查询落地；教师复核、完整题库、知识图谱、学习计划和班级分析不在该 change 内。该范围调整待评审，不代表原计划已全部实现。
+当前 [2026-11-03-add-async-assignment-grading change](../openspec/changes/2026-11-03-add-async-assignment-grading/proposal.md) 已实现文本作答、异步模型辅助评分、确定性计分和结果查询；教师复核、完整题库、知识图谱、学习计划和班级分析不在该 change 内。范围调整按 change 执行并完成本机验收，待评审/归档。
 
 ## 6. 交付阶段与本节课边界
 

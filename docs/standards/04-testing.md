@@ -126,7 +126,7 @@ AI 生成代码必须先注明生成范围并由开发者自审，再经另一�
 | --- | --- |
 | Java 代码规范 | `backend/mvnw.cmd -f backend/pom.xml checkstyle:check` |
 | Java 静态分析 | `backend/mvnw.cmd -f backend/pom.xml spotbugs:check` |
-| Java 依赖漏洞 | `backend/mvnw.cmd -f backend/pom.xml org.owasp:dependency-check-maven:check` |
+| Java 依赖漏洞 | `python scripts/osv_scan.py`（OSV API，默认）；`backend/mvnw.cmd -f backend/pom.xml org.owasp:dependency-check-maven:check` 为可选补充，无 NVD API Key 时不得写成已执行 |
 | 前端规范与依赖 | `npm --prefix frontend run lint`、`npm --prefix frontend audit --audit-level=high` |
 | Python 规范与依赖 | `python -m ruff check mcp-server apitest scripts`、`python -m pip_audit -r apitest/requirements.txt` |
 | 数据库查询风险 | 对新增/修改查询执行 `EXPLAIN`，人工复核索引、N+1、无分页列表和锁范围 |
