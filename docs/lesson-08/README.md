@@ -5,6 +5,7 @@
 - 关联 change：[2026-11-03-add-async-assignment-grading](../../openspec/changes/2026-11-03-add-async-assignment-grading/proposal.md)
 - 能力规约：[assignment-grading](../../openspec/changes/2026-11-03-add-async-assignment-grading/specs/assignment-grading/spec.md)、[reliable-task-execution](../../openspec/changes/2026-11-03-add-async-assignment-grading/specs/reliable-task-execution/spec.md)
 - 评审记录：[review.md](review.md)
+- 交接待办：[handoff.md](handoff.md)
 - 测试/评审规范：[04-testing.md](../standards/04-testing.md)
 - 项目状态：[project-status.md](../project-status.md)
 

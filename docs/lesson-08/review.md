@@ -4,6 +4,7 @@
 
 - 关联 change：[2026-11-03-add-async-assignment-grading](../../openspec/changes/2026-11-03-add-async-assignment-grading/proposal.md)
 - 验收记录：[README.md](README.md)
+- 交接待办：[handoff.md](handoff.md)
 - 测试/评审规范：[04-testing.md](../standards/04-testing.md)
 
 ## 0. 评审元数据
