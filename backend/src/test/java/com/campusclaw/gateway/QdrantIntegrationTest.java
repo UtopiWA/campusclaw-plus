@@ -5,8 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.campusclaw.config.AppProperties;
 import com.campusclaw.gateway.VectorStoreGateway.VectorPoint;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -43,7 +43,7 @@ class QdrantIntegrationTest {
 
         JsonNode payload = pointPayload(url, 101L);
         List<String> payloadFields = new ArrayList<>();
-        payload.fieldNames().forEachRemaining(payloadFields::add);
+        payload.propertyNames().iterator().forEachRemaining(payloadFields::add);
         assertThat(payloadFields).containsExactlyInAnyOrder(
                 "chunk_id", "class_id", "material_id", "knowledge_entry_id", "chunk_index");
         assertThat(payload.toString()).doesNotContain("chunk_text", "正文");

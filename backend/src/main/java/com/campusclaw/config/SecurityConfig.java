@@ -26,8 +26,7 @@ public class SecurityConfig {
     @Bean
     DaoAuthenticationProvider daoAuthenticationProvider(JpaUserDetailsService userDetailsService,
                                                          PasswordEncoder passwordEncoder) {
-        DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
-        provider.setUserDetailsService(userDetailsService);
+        DaoAuthenticationProvider provider = new DaoAuthenticationProvider(userDetailsService);
         provider.setPasswordEncoder(passwordEncoder);
         provider.setHideUserNotFoundExceptions(true);
         return provider;

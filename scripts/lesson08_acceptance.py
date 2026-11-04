@@ -196,13 +196,14 @@ def main() -> int:
     parser.add_argument("mode", choices=("basic", "pending", "wait", "duplicate", "report"))
     parser.add_argument("--task-id")
     parser.add_argument("--env-file", type=Path, default=ENV_PATH)
-    parser.add_argument("--base-url", default="http://127.0.0.1:8080")
-    parser.add_argument("--management-url", default=MANAGEMENT_URL)
+    parser.add_argument("--base-url")
+    parser.add_argument("--management-url")
     args = parser.parse_args()
     ENV_PATH = args.env_file
-    BASE_URL = args.base_url.rstrip("/")
-    MANAGEMENT_URL = args.management_url.rstrip("/")
     env = _env()
+    BASE_URL = (args.base_url or f"http://127.0.0.1:{env.get('APP_PORT', '8080')}").rstrip("/")
+    MANAGEMENT_URL = (args.management_url or
+                      f"http://127.0.0.1:{env.get('RABBITMQ_MANAGEMENT_PORT', '15672')}").rstrip("/")
     password = env.get("DEMO_SEED_PASSWORD")
     if not password:
         raise SystemExit("missing DEMO_SEED_PASSWORD")

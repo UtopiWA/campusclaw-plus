@@ -13,7 +13,7 @@ import com.campusclaw.gateway.ChatGateway;
 import com.campusclaw.mcp.ToolCallSummary;
 import com.campusclaw.persistence.ConversationMessage;
 import com.campusclaw.persistence.MessageStatus;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;

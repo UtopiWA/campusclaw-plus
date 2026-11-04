@@ -22,6 +22,7 @@ spring:
   flyway:
     enabled: true
   jackson:
+    use-jackson2-defaults: true
     deserialization:
       fail-on-unknown-properties: true
   servlet:

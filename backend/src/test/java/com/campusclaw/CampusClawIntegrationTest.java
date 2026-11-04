@@ -48,7 +48,7 @@ import com.campusclaw.knowledge.VectorCleanupService;
 import com.campusclaw.material.MaterialService;
 import com.campusclaw.common.DependencyUnavailableException;
 import com.campusclaw.retrieval.RetrievalService;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -59,10 +59,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.flywaydb.core.Flyway;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.SpyBean;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -134,7 +134,7 @@ class CampusClawIntegrationTest {
     @Autowired ConversationMessageRepository conversationMessages;
     @Autowired DemoSeedService seedService;
     @Autowired PasswordEncoder passwordEncoder;
-    @SpyBean KnowledgeEntryRepository knowledgeEntries;
+    @MockitoSpyBean KnowledgeEntryRepository knowledgeEntries;
     @Autowired KnowledgeChunkRepository retrievalChunks;
     @Autowired VectorCleanupJobRepository cleanupJobs;
     @Autowired VectorCleanupService vectorCleanup;
@@ -142,13 +142,13 @@ class CampusClawIntegrationTest {
     @Autowired RetrievalService retrievalService;
     @Autowired JdbcTemplate jdbc;
     @Autowired ObjectMapper objectMapper;
-    @MockBean EmbeddingGateway embeddings;
-    @MockBean VectorStoreGateway vectors;
-    @MockBean ChatGateway chat;
-    @MockBean com.campusclaw.health.QdrantHealthProbe qdrantHealth;
+    @MockitoBean EmbeddingGateway embeddings;
+    @MockitoBean VectorStoreGateway vectors;
+    @MockitoBean ChatGateway chat;
+    @MockitoBean com.campusclaw.health.QdrantHealthProbe qdrantHealth;
     @Autowired com.campusclaw.grading.AssignmentService gradingAssignments;
     @Autowired com.campusclaw.grading.SubmissionService gradingSubmissions;
-    @SpyBean com.campusclaw.persistence.GradingOutboxRepository gradingOutbox;
+    @MockitoSpyBean com.campusclaw.persistence.GradingOutboxRepository gradingOutbox;
 
     @BeforeEach
     void restoreSpy() {

@@ -12,9 +12,9 @@ import com.campusclaw.persistence.MessageRole;
 import com.campusclaw.persistence.MessageStatus;
 import com.campusclaw.persistence.UserAccount;
 import com.campusclaw.mcp.ToolCallSummary;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -175,7 +175,7 @@ public class ConversationService {
         }
         try {
             return objectMapper.readValue(json, new TypeReference<>() { });
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             throw new IllegalStateException("Stored message citations are invalid", exception);
         }
     }
@@ -184,7 +184,7 @@ public class ConversationService {
         if (json == null || json.isBlank()) return List.of();
         try {
             return objectMapper.readValue(json, new TypeReference<>() { });
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             throw new IllegalStateException("Stored message tool calls are invalid", exception);
         }
     }
@@ -206,7 +206,7 @@ public class ConversationService {
     private String writeJson(List<?> values) {
         try {
             return objectMapper.writeValueAsString(values == null ? List.of() : values);
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             throw new IllegalStateException("Could not store message metadata", exception);
         }
     }

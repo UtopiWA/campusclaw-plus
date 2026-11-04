@@ -7,7 +7,7 @@ import com.campusclaw.persistence.GradingTask;
 import com.campusclaw.persistence.GradingTaskRepository;
 import com.campusclaw.persistence.Submission;
 import com.campusclaw.persistence.SubmissionRepository;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.rabbitmq.client.Channel;
 import java.io.IOException;
 import java.time.Instant;

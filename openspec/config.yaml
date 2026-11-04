@@ -9,13 +9,14 @@ context: |
   CampusClaw 是面向中小学班级场景的教研智能体平台，已具备账号登录、教师/学生权限、服务端班级隔离、材料与异步索引、可追溯检索、技能/智能体配置、私人持久化流式会话和 MCP 工具管理/调用/审计。
   已归档行为基线由 openspec/specs 维护；未归档 change 的规约和验收记录须同时核对，文件存在不代表实现或交付完成。
   平台支持 .txt/.md 上传、同班在线查看与原文件下载；教师管理本班材料和配置，学生不能执行这些管理操作。直接检索位于 /materials，教师配置与 MCP 位于 /assistants，持久化问答位于 /conversations，旧 /search 重定向至材料页。
-  技术栈为 Vue 3、Vite、Java 17、Spring Boot 3、MySQL 8、Qdrant、Bearer JWT、Python MCP 示例服务和 Docker Compose；保持既有 HTTP JSON、SSE 和迁移兼容。
+  技术栈为 Vue 3、Vite、Java 17、Spring Boot 4、MySQL 8、Qdrant、RabbitMQ、Bearer JWT、Python MCP 示例服务和 Docker Compose；保持既有 HTTP JSON、SSE 和迁移兼容。
   问答材料在 RRF 后、取前四条之前应用 0.55 强向量或 0.45 双路确认门；直接搜索仍采用 0.35 向量宽召回。安全 MCP 结果可独立支持会话生成；材料与工具均无依据才生成前固定拒答。
   技能与工具由服务端确定性选择，命中技能时由 knowledge_search 决定是否检索；模型不选工具或构造参数，MCP 无自动重试，摘要随 SSE 和消息快照恢复。
-  /assignments 已实现教师创建文本作业、学生提交、RabbitMQ/事务性发件箱/独立 worker 异步批改和结果查询；Class08 的依赖风险处置未获接受，仍未完成交付。教师复核、完整题库、错题、知识点画像和学习计划未实现，早期表或禁用菜单不等于已有能力。
+  /assignments 已实现教师创建文本作业、学生提交、RabbitMQ/事务性发件箱/独立 worker 异步批改和结果查询；原未接受的依赖风险已通过独立升级整改，默认完整扫描零告警；Class08 与升级 change 尚待实际成员复核和归档，不等于已完成交付。教师复核、完整题库、错题、知识点画像和学习计划未实现，早期表或禁用菜单不等于已有能力。
   班级是数据边界，所有业务读写都必须使用 Bearer JWT 标识用户在数据库中的最新 class_id；客户端不得指定或覆盖数据所属班级。
   密码必须哈希存储，数据库凭据、演示种子口令等敏感配置必须来自服务端环境变量。
   规约变更必须先于实现；实现完成后按 tasks.md 逐项验证，且不得提交真实密钥或生成数据。
+  团队 Docker 部署默认项目 campusclaw-plus，网页/MySQL/RabbitMQ 管理端口为 18080/13306/15673，仅本机访问；私有 .env.team 与旧项目配置分开。部署差异以当前 Docker 实测和 README 为准，不复用旧项目的数据卷。
   仓库内文档只引用仓库内可交付文件，不依赖仓库外目录。
 
 rules:

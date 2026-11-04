@@ -9,7 +9,7 @@ import com.campusclaw.persistence.Role;
 import com.campusclaw.persistence.SubmissionRepository;
 import com.campusclaw.persistence.UserAccount;
 import com.campusclaw.persistence.UserAccountRepository;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;

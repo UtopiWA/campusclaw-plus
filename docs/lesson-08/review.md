@@ -1,6 +1,6 @@
 # Class08 评审记录
 
-状态：**本次独立技术复核及修正已执行；成员 A 暂不接受依赖风险，当前 change 保持活动，不进行规格同步、归档或提交，标签未授权。** 第 0～6 节保留实现方原始自审记录供对照，当前独立结论以第 7 节为准；代理不代签成员结论。
+状态：**依赖升级与团队 Docker 实例已通过技术检查，待用户人工验收和另一成员独立复核；两个 change 保持活动，未同步归档或提交，标签未授权。** 第 0～6 节为实现方记录，第 7 节为升级前独立复核及拒绝风险的历史，第 8 节为本轮整改后的结果；代理不代签成员结论。
 
 - 关联 change：[2026-11-03-add-async-assignment-grading](../../openspec/changes/2026-11-03-add-async-assignment-grading/proposal.md)
 - 验收记录：[README.md](README.md)
@@ -259,7 +259,7 @@
 | `openspec/changes/2026-11-04-upgrade-spring-security-baseline/design.md` | 可用（规划） | 官方平台/迁移依据；明确 JSON、AMQP、旧数据兼容与逐项复扫边界，未执行升级 |
 | `openspec/changes/2026-11-04-upgrade-spring-security-baseline/tasks.md` | 可用（规划） | 全部未勾选，按开发/测试整体分工，另一成员复核且不代签 |
 
-### 7.7 当前合入门槛
+### 7.7 升级前合入门槛（历史，最新见第 8 节）
 
 - [x] 独立执行 unit、integration、API、真实模型核心判据、故障与页面检查，结果另行记录。
 - [x] 并发/事务/权限/迟到执行/输入输出/配置/扫描可靠性的问题已修正并补回归。
@@ -267,4 +267,97 @@
 - [ ] 成员 A 实际确认本次评审、规则文本和依赖处置；本次明确暂不接受风险，门槛未通过，代理未代签。
 - [ ] 依赖整改、复查并通过评审后，才同步主规格、严格校验、归档、更新状态并提交；标签仍按单独授权执行。
 
-**当前结论：功能技术复核及修正完成，依赖风险处置未获接受，Class08 保持活动、交付未完成。**
+**升级前结论：功能技术复核及修正完成，依赖风险处置未获接受，Class08 保持活动、交付未完成。**
+
+## 8. 依赖整改与团队 Docker 运行基线（2026-11-04）
+
+用户明确要求按独立升级方案实施，以本机 Docker 为团队部署依据。候选为 `d5167f3` 加本轮工作区；代理执行迁移、自审、测试与整理，另一成员尚未确认。原风险接受建议已由升级整改替代，没有将此前拒绝改写为接受。
+
+### 8.1 七维与高风险复核
+
+| 维度 | 本轮结果 |
+| --- | --- |
+| 覆盖 | 依赖/JSON/框架迁移、独立七服务部署、扫描和既有业务复现；不新增诊断等业务 |
+| 一致性 | HTTP/JSON/SSE 保持；默认 Compose 项目及端口变化、私有配置选择明确；旧数据与旧应用回读通过 |
+| 失败路径 | 严格校验、权限、迟到 attempt 和 publisher return 断言保留；DLQ 与模拟超时回收实际通过 |
+| 查询性能 | 未新增查询/表/无界循环；JPA 迁移后 22 项集成覆盖并发/回滚；索引判断沿用第 7 节，不冒称本轮压测 |
+| 重复代码 | 复用现有配置、网关及检查脚本；仅必要适配，不引入通用任务层 |
+| 漏洞风险 | 完整默认 scan 退出 0；OSV 124/124、npm 全量 audit 和 pip-audit 均零告警；OWASP 未运行 |
+| 高风险 | 结果唯一性、短事务、attempt 隔离继续通过；旧成绩不变，新旧会话/工具快照响应相同；原项目容器及数据不变 |
+
+并发/事务/一致性专门复核：作业锁、任务认领、结果/终态原子提交、发件箱发布/返回和重试上限均保留；MySQL 并发/回滚、旧 attempt 断言及实际重复投递通过。JSON 迁移不改持久化结构或已交付迁移，消息仍仅 taskId；日志/死信隐私另有实际检查。worker 还实际完成消费和恢复，不以“进程运行中”作为功能正常的唯一依据。
+
+### 8.2 逐文件复核
+
+下表为本轮具体差异文件；“可用”表示代理技术自审，不代替另一成员签署。实际证据见 [README 第 8 节](README.md#8-依赖升级与独立团队-docker-部署2026-11-04)。
+
+| 文件 | 结论 | 依据 |
+| --- | --- | --- |
+| `.env.example` | 可用 | 部署端口/配置键与独立 Compose 对齐；无真实值 |
+| `.gitignore` | 可用 | 忽略私有 .env.*，保留 .env.example；实际 check-ignore 通过 |
+| `README.md` | 可用 | 对照实现、运行结果、配置与链接；保留历史及未完成成员门槛，不冒称归档 |
+| `apitest/README.md` | 可用 | 对照实现、运行结果、配置与链接；保留历史及未完成成员门槛，不冒称归档 |
+| `apitest/common/config.py` | 可用 | 显式选择私有文件和 APP_PORT；隔离测试与正式 API 通过 |
+| `backend/pom.xml` | 可用 | 有效依赖树核对；JDK17 镜像构建、OSV 124/124 零告警 |
+| `backend/src/main/java/com/campusclaw/config/SecurityConfig.java` | 可用 | Dao provider 新构造器；JWT/学生/匿名/跨班实际拒绝与单测通过 |
+| `backend/src/main/java/com/campusclaw/conversation/ConversationService.java` | 可用 | JSON 类型/异常迁移；新旧应用会话与工具快照响应一致 |
+| `backend/src/main/java/com/campusclaw/conversation/ConversationStreamingService.java` | 可用 | SSE mapper 迁移；真实流、最终消息、工具摘要和原单测通过 |
+| `backend/src/main/java/com/campusclaw/conversation/SseEventWriter.java` | 可用 | SSE JSON 编码迁移；实际 meta/delta/done 与消息恢复通过 |
+| `backend/src/main/java/com/campusclaw/gateway/OpenAiChatGateway.java` | 可用 | JSON 树迁移；真实批改/流式回答及错误/重试回归通过 |
+| `backend/src/main/java/com/campusclaw/gateway/OpenAiEmbeddingGateway.java` | 可用 | JSON 树迁移；真实材料 READY 与原重试回归通过 |
+| `backend/src/main/java/com/campusclaw/gateway/QdrantVectorStoreGateway.java` | 可用 | JSON 树迁移；独立容器检索/载荷边界及实际索引通过 |
+| `backend/src/main/java/com/campusclaw/grading/GradingModelService.java` | 可用 | 严格 reader 迁移；缺失/未知/尾随/空 verdict 原拒绝断言及真实评分通过 |
+| `backend/src/main/java/com/campusclaw/grading/GradingOutboxPublisher.java` | 可用 | 任务 JSON 编码迁移；确认/返回断言与实际重复投递通过 |
+| `backend/src/main/java/com/campusclaw/grading/GradingTaskQueryService.java` | 可用 | 结果 JSON 读取迁移；旧视图不变，权限回归通过 |
+| `backend/src/main/java/com/campusclaw/grading/GradingWorker.java` | 可用 | 任务 JSON 解析迁移；停启、死信和模拟 RUNNING 回收通过 |
+| `backend/src/main/java/com/campusclaw/grading/RubricCodec.java` | 可用 | JSON 编解码迁移；旧 rubric、合法评分和故障 rubric 场景通过 |
+| `backend/src/main/java/com/campusclaw/knowledge/VectorCleanupService.java` | 可用 | 清理 job JSON 类型迁移；原有补偿回归通过，未改清理边界 |
+| `backend/src/main/java/com/campusclaw/mcp/McpHttpClient.java` | 可用 | JSON-RPC 编解码迁移；真实发现/调用及协议回归通过 |
+| `backend/src/main/java/com/campusclaw/mcp/McpServerService.java` | 可用 | 缓存 schema 编解码迁移；API 发现/重连/权限/历史保护通过 |
+| `backend/src/main/java/com/campusclaw/mcp/McpToolView.java` | 可用 | schema 树类型迁移；真实工具列表与 API 契约通过 |
+| `backend/src/main/java/com/campusclaw/observability/JsonLogEncoder.java` | 可用 | 日志 mapper 迁移；白名单单测与实际日志隐私检查通过 |
+| `backend/src/main/java/com/campusclaw/retrieval/AskRequest.java` | 可用 | 保留注解，仅迁移 JsonNode；原输入校验回归通过 |
+| `backend/src/main/resources/application.yml` | 可用 | Jackson 3 保留兼容默认及未知字段拒绝；旧 JSON 实际回读 |
+| `backend/src/test/java/com/campusclaw/CampusClawIntegrationTest.java` | 可用 | 保留原断言，适配 Jackson/Boot 测试包或 Mockito 注解；所属 unit/integration 实际通过 |
+| `backend/src/test/java/com/campusclaw/agent/AgentConfigurationControllerTest.java` | 可用 | 保留原断言，适配 Jackson/Boot 测试包或 Mockito 注解；所属 unit/integration 实际通过 |
+| `backend/src/test/java/com/campusclaw/config/OpenApiEndpointTest.java` | 可用 | 保留原断言，适配 Jackson/Boot 测试包或 Mockito 注解；所属 unit/integration 实际通过 |
+| `backend/src/test/java/com/campusclaw/config/SecurityConfigTest.java` | 可用 | 保留原断言，适配 Jackson/Boot 测试包或 Mockito 注解；所属 unit/integration 实际通过 |
+| `backend/src/test/java/com/campusclaw/conversation/ConversationControllerTest.java` | 可用 | 保留原断言，适配 Jackson/Boot 测试包或 Mockito 注解；所属 unit/integration 实际通过 |
+| `backend/src/test/java/com/campusclaw/conversation/ConversationServiceTest.java` | 可用 | 保留原断言，适配 Jackson/Boot 测试包或 Mockito 注解；所属 unit/integration 实际通过 |
+| `backend/src/test/java/com/campusclaw/conversation/ConversationStreamingServiceTest.java` | 可用 | 保留原断言，适配 Jackson/Boot 测试包或 Mockito 注解；所属 unit/integration 实际通过 |
+| `backend/src/test/java/com/campusclaw/gateway/QdrantIntegrationTest.java` | 可用 | 保留原断言，适配 Jackson/Boot 测试包或 Mockito 注解；所属 unit/integration 实际通过 |
+| `backend/src/test/java/com/campusclaw/grading/GradingModelServiceTest.java` | 可用 | 保留原断言，适配 Jackson/Boot 测试包或 Mockito 注解；所属 unit/integration 实际通过 |
+| `backend/src/test/java/com/campusclaw/grading/GradingOutboxPublisherTest.java` | 可用 | 保留原断言，适配 Jackson/Boot 测试包或 Mockito 注解；所属 unit/integration 实际通过 |
+| `backend/src/test/java/com/campusclaw/grading/GradingTaskQueryServiceTest.java` | 可用 | 保留原断言，适配 Jackson/Boot 测试包或 Mockito 注解；所属 unit/integration 实际通过 |
+| `backend/src/test/java/com/campusclaw/mcp/McpHttpClientTest.java` | 可用 | 保留原断言，适配 Jackson/Boot 测试包或 Mockito 注解；所属 unit/integration 实际通过 |
+| `backend/src/test/java/com/campusclaw/mcp/McpServerControllerTest.java` | 可用 | 保留原断言，适配 Jackson/Boot 测试包或 Mockito 注解；所属 unit/integration 实际通过 |
+| `backend/src/test/java/com/campusclaw/mcp/McpServerServiceTest.java` | 可用 | 保留原断言，适配 Jackson/Boot 测试包或 Mockito 注解；所属 unit/integration 实际通过 |
+| `backend/src/test/java/com/campusclaw/observability/JsonLogEncoderTest.java` | 可用 | 保留原断言，适配 Jackson/Boot 测试包或 Mockito 注解；所属 unit/integration 实际通过 |
+| `backend/src/test/java/com/campusclaw/observability/RequestLoggingFilterTest.java` | 可用 | 保留原断言，适配 Jackson/Boot 测试包或 Mockito 注解；所属 unit/integration 实际通过 |
+| `docker-compose.yml` | 可用 | 七服务实跑、项目/镜像/卷和端口隔离；原六容器未变 |
+| `docs/lesson-08/README.md` | 可用 | 对照实现、运行结果、配置与链接；保留历史及未完成成员门槛，不冒称归档 |
+| `docs/lesson-08/handoff.md` | 可用 | 对照实现、运行结果、配置与链接；保留历史及未完成成员门槛，不冒称归档 |
+| `docs/lesson-08/review.md` | 可用 | 对照实现、运行结果、配置与链接；保留历史及未完成成员门槛，不冒称归档 |
+| `docs/project-status.md` | 可用 | 对照实现、运行结果、配置与链接；保留历史及未完成成员门槛，不冒称归档 |
+| `docs/standards/02-backend.md` | 可用 | 对照实现、运行结果、配置与链接；保留历史及未完成成员门槛，不冒称归档 |
+| `docs/standards/05-operations.md` | 可用 | 对照实现、运行结果、配置与链接；保留历史及未完成成员门槛，不冒称归档 |
+| `frontend/package-lock.json` | 可用 | npm 12 隔离生成，npm ci 本机/容器复现，无 force 或忽略 peer |
+| `frontend/package.json` | 可用 | 修复 KaTeX 与工具链告警；实际 lint/76 测试/构建及全量 audit 零告警 |
+| `openspec/changes/2026-11-03-add-async-assignment-grading/README.md` | 可用 | 对照实现、运行结果、配置与链接；保留历史及未完成成员门槛，不冒称归档 |
+| `openspec/changes/2026-11-03-add-async-assignment-grading/tasks.md` | 可用 | 对照实现、运行结果、配置与链接；保留历史及未完成成员门槛，不冒称归档 |
+| `openspec/changes/2026-11-04-upgrade-spring-security-baseline/design.md` | 可用 | 对照实现、运行结果、配置与链接；保留历史及未完成成员门槛，不冒称归档 |
+| `openspec/changes/2026-11-04-upgrade-spring-security-baseline/proposal.md` | 可用 | 对照实现、运行结果、配置与链接；保留历史及未完成成员门槛，不冒称归档 |
+| `openspec/changes/2026-11-04-upgrade-spring-security-baseline/tasks.md` | 可用 | 对照实现、运行结果、配置与链接；保留历史及未完成成员门槛，不冒称归档 |
+| `openspec/config.yaml` | 可用 | 同步 Boot 4/团队部署事实，规则及 apply 安全约束保留 |
+| `scripts/lesson08_acceptance.py` | 可用 | 从所选配置读取地址；正式 .env.team 命令批改成功，数据库/队列报告通过 |
+| `scripts/tests/test_api_config.py` | 可用 | 团队端口/凭据选择、缺文件不回退旧配置；20 项脚本回归通过 |
+
+### 8.3 当前交付门槛
+
+- [x] 升级、独立 Docker 实例、既有功能回归、冷启动/兼容与默认完整扫描通过。
+- [x] 原七项 Maven 告警和 npm 遗留告警消除，无 suppression、force 或降低阈值。
+- [x] 原项目容器/数据不变；团队实例/私有配置保留，临时冷启动/兼容实例已清理。
+- [ ] 用户人工验收及另一成员按 Docker 基线独立复现、复核规则与代码；代理不代签。
+- [ ] 实际成员评审完成后按授权办理规格同步、归档、提交/推送；标签单独授权。
+
+当前结论：**技术自审和运行验证通过，等待人工验收与成员交叉评审。** OWASP/NVD 未运行，没有自动发布、归档或代签。

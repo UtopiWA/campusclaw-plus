@@ -58,9 +58,9 @@ class TestConfig:
 
     @classmethod
     def load(cls) -> "TestConfig":
-        """以进程环境优先、仓库 `.env` 回退的顺序加载配置。"""
+        """进程环境优先，配置文件可显式选择，避免误连另一份部署。"""
         project_root = Path(__file__).resolve().parents[2]
-        values = _read_dotenv(project_root / ".env")
+        values = _read_dotenv(Path(os.environ.get("APITEST_ENV_FILE", str(project_root / ".env"))))
 
         def value(key: str, default: str = "") -> str:
             return os.environ.get(key, values.get(key, default)).strip()
@@ -82,7 +82,7 @@ class TestConfig:
 
         return cls(
             project_root=project_root,
-            base_url=value("APITEST_BASE_URL", "http://127.0.0.1:8080").rstrip("/"),
+            base_url=value("APITEST_BASE_URL", f"http://127.0.0.1:{value('APP_PORT', '8080')}").rstrip("/"),
             teacher_username=value("APITEST_TEACHER_USERNAME", "teacher-a"),
             teacher_password=teacher_password,
             student_username=value("APITEST_STUDENT_USERNAME", "student-a1"),

@@ -22,15 +22,15 @@ import com.campusclaw.common.DependencyUnavailableException;
 import com.campusclaw.common.NotFoundException;
 import com.campusclaw.gateway.ChatGateway;
 import com.campusclaw.persistence.UserAccount;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.ObjectMapper;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
-import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.test.web.servlet.MockMvc;
@@ -53,11 +53,11 @@ class ConversationControllerTest {
         currentUsers = mock(CurrentUserService.class);
         user = mock(UserAccount.class);
         when(currentUsers.requireUser()).thenReturn(user);
-        ObjectMapper mapper = new ObjectMapper().enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+        var mapper = tools.jackson.databind.json.JsonMapper.builder().enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES).build();
         mvc = MockMvcBuilders.standaloneSetup(
                         new ConversationController(conversations, currentUsers, agentConversations, streaming))
                 .setControllerAdvice(new ApiExceptionHandler())
-                .setMessageConverters(new MappingJackson2HttpMessageConverter(mapper))
+                .setMessageConverters(new JacksonJsonHttpMessageConverter(mapper))
                 .build();
     }
 

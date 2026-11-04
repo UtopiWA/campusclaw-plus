@@ -5,8 +5,8 @@ import com.campusclaw.config.GradingProperties;
 import com.campusclaw.gateway.ChatGateway;
 import com.campusclaw.persistence.Assignment;
 import com.campusclaw.persistence.Submission;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.ObjectMapper;
 import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -99,8 +99,7 @@ class GradingModelServiceTest {
     }
 
     private GradingModelService service(ChatGateway chat) {
-        ObjectMapper mapper = new ObjectMapper()
-                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, true);
+        ObjectMapper mapper = tools.jackson.databind.json.JsonMapper.builder().enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES).build();
         return new GradingModelService(chat, appProperties(), gradingProperties(),
                 new RubricCodec(mapper), mapper);
     }

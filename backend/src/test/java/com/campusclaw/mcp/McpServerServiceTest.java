@@ -22,7 +22,7 @@ import com.campusclaw.persistence.McpToolRepository;
 import com.campusclaw.persistence.Role;
 import com.campusclaw.persistence.UserAccount;
 import com.campusclaw.persistence.UserAccountRepository;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;

@@ -12,9 +12,9 @@ import com.campusclaw.persistence.McpToolCallRepository;
 import com.campusclaw.persistence.McpToolRepository;
 import com.campusclaw.persistence.UserAccount;
 import com.campusclaw.persistence.UserAccountRepository;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.HashSet;
@@ -215,12 +215,12 @@ public class McpServerService {
 
     private String writeJson(JsonNode value) {
         try { return objectMapper.writeValueAsString(value); }
-        catch (JsonProcessingException exception) { throw new IllegalStateException("Invalid MCP schema", exception); }
+        catch (JacksonException exception) { throw new IllegalStateException("Invalid MCP schema", exception); }
     }
 
     private JsonNode readJson(String value) {
         try { return objectMapper.readTree(value); }
-        catch (JsonProcessingException exception) { throw new IllegalStateException("Stored MCP schema is invalid", exception); }
+        catch (JacksonException exception) { throw new IllegalStateException("Stored MCP schema is invalid", exception); }
     }
 
     private record ConnectionSnapshot(Long id, Long classId, String baseUrl, String token, long version) { }

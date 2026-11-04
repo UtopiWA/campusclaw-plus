@@ -21,9 +21,9 @@ import org.springdoc.core.properties.SpringDocConfigProperties;
 import org.springdoc.webmvc.core.configuration.SpringDocWebMvcConfiguration;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
@@ -40,15 +40,15 @@ class OpenApiEndpointTest {
     @Autowired
     private MockMvc mvc;
 
-    @MockBean private CurrentUserService currentUsers;
-    @MockBean private AppProperties appProperties;
-    @MockBean private JwtProperties jwtProperties;
-    @MockBean private AssistantService assistants;
-    @MockBean private SkillService skills;
-    @MockBean private ConversationService conversations;
-    @MockBean private AgentConversationService agentConversations;
-    @MockBean private ConversationStreamingService streaming;
-    @MockBean private McpServerService mcpServers;
+    @MockitoBean private CurrentUserService currentUsers;
+    @MockitoBean private AppProperties appProperties;
+    @MockitoBean private JwtProperties jwtProperties;
+    @MockitoBean private AssistantService assistants;
+    @MockitoBean private SkillService skills;
+    @MockitoBean private ConversationService conversations;
+    @MockitoBean private AgentConversationService agentConversations;
+    @MockitoBean private ConversationStreamingService streaming;
+    @MockitoBean private McpServerService mcpServers;
 
     @Test
     void exposesAllNewPathsDtosAndSseMediaType() throws Exception {

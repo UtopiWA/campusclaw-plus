@@ -2,7 +2,7 @@ package com.campusclaw.conversation;
 
 import com.campusclaw.persistence.ConversationMessage;
 import com.campusclaw.persistence.MessageStatus;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import java.io.OutputStream;
 import java.util.Map;
 import org.slf4j.Logger;

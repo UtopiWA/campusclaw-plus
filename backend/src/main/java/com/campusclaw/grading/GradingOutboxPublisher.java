@@ -5,7 +5,7 @@ import com.campusclaw.persistence.GradingEventType;
 import com.campusclaw.persistence.GradingOutbox;
 import com.campusclaw.persistence.GradingOutboxRepository;
 import com.campusclaw.persistence.GradingOutboxStatus;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.TimeUnit;

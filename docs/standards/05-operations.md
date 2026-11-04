@@ -12,7 +12,8 @@
 
 | 配置组 | 项目键名及判据 |
 | --- | --- |
-| 数据库 | `MYSQL_ROOT_PASSWORD/MYSQL_PASSWORD` 为私有非空值；Compose 的库名/用户默认 `campusclaw`，`MYSQL_HOST_PORT` 默认 3306；后端独立运行用 `DB_URL/DB_USERNAME/DB_PASSWORD` |
+| 数据库 | `MYSQL_ROOT_PASSWORD/MYSQL_PASSWORD` 为私有非空值；Compose 的库名/用户默认 `campusclaw`，`MYSQL_HOST_PORT` 默认 13306；后端独立运行用 `DB_URL/DB_USERNAME/DB_PASSWORD` |
+| 部署隔离 | 默认项目 `campusclaw-plus`，APP_PORT 18080、RabbitMQ 管理 15673；私有 `.env.team`，接口检查用 `APITEST_ENV_FILE` 选择同一配置，不复用个人项目卷 |
 | 认证/种子 | `AUTH_JWT_SECRET` 至少 32 UTF-8 字节，`AUTH_JWT_TTL` 默认 PT8H；`DEMO_SEED_ENABLED` 默认 false，仅开启时要求 `DEMO_SEED_PASSWORD` |
 | 模型 | `EMBEDDING_BASE_URL/API_KEY/MODEL/DIMENSION` 与 `CHAT_BASE_URL/API_KEY/MODEL` 必须按实际服务填写；维度匹配 Cosine collection；`CHAT_REASONING_EFFORT` 默认 none，显式空值用于省略该供应商扩展字段 |
 | MCP | `MCP_AUTH_TOKEN` 与登记服务的 Token 一致；`MCP_TOKEN_ENCRYPTION_KEY` 是独立 32 随机字节的 Base64；白名单默认 mcp-demo；连接/读取默认 3s/10s |
@@ -25,11 +26,11 @@
 
 ## 2. 启动与健康
 
-按 [README](../../README.md) 复制模板、私下填写配置，从仓库根目录执行：
+按 [README](../../README.md) 创建私有 `.env.team`，从仓库根目录执行。默认项目 `campusclaw-plus`，网页/MySQL/RabbitMQ 管理端口为 18080/13306/15673；必须与个人项目隔离，项目名同时隔离镜像、网络和具名卷。两名成员以本轮 Docker 实测配置为部署基线，原生进程的不同端口必须显式覆盖。磁盘位置由 Docker Desktop 管理，Compose 不会迁移引擎数据。
 
 ```powershell
-docker compose --env-file .env up -d --build
-curl.exe -f http://localhost:8080/health
+docker compose --env-file .env.team up -d --build
+curl.exe -f http://localhost:18080/health
 ```
 
 启动后访问 `/materials`、教师 `/assistants`、`/conversations`；空库默认不开种子就没有演示账号，须按 README 的演示初始化条件处理，不能让检查脚本自动开种子。Compose 依赖健康和用户业务可用是不同检查。

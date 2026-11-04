@@ -2,7 +2,7 @@ package com.campusclaw.gateway;
 
 import com.campusclaw.common.DependencyUnavailableException;
 import com.campusclaw.config.AppProperties;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;

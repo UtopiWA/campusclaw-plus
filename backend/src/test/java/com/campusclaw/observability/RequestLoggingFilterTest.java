@@ -90,7 +90,7 @@ class RequestLoggingFilterTest {
         })).isInstanceOf(jakarta.servlet.ServletException.class);
         assertThat(events.list).hasSize(1);
         var encoded = new String(new JsonLogEncoder().encode(events.list.get(0)), java.nio.charset.StandardCharsets.UTF_8);
-        var row = new com.fasterxml.jackson.databind.ObjectMapper().readTree(encoded);
+        var row = new tools.jackson.databind.ObjectMapper().readTree(encoded);
         assertThat(row.path("status").asInt()).isEqualTo(500);
         assertThat(row.path("durationMs").asLong()).isGreaterThanOrEqualTo(0);
         assertThat(encoded).doesNotContain("PRIVATE-MARKER");

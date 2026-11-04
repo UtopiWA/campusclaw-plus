@@ -16,14 +16,14 @@ import com.campusclaw.common.ApiExceptionHandler;
 import com.campusclaw.common.ConflictException;
 import com.campusclaw.common.NotFoundException;
 import com.campusclaw.persistence.UserAccount;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
-import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.test.web.servlet.MockMvc;
@@ -40,13 +40,12 @@ class AgentConfigurationControllerTest {
         assistants = mock(AssistantService.class);
         skills = mock(SkillService.class);
         currentUsers = mock(CurrentUserService.class);
-        ObjectMapper strictMapper = new ObjectMapper()
-                .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+        var strictMapper = tools.jackson.databind.json.JsonMapper.builder().enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES).build();
         mvc = MockMvcBuilders.standaloneSetup(
                         new AssistantController(assistants, currentUsers),
                         new SkillController(skills, currentUsers))
                 .setControllerAdvice(new ApiExceptionHandler())
-                .setMessageConverters(new MappingJackson2HttpMessageConverter(strictMapper))
+                .setMessageConverters(new JacksonJsonHttpMessageConverter(strictMapper))
                 .build();
     }
 

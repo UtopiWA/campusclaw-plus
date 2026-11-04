@@ -10,21 +10,22 @@
    python -m pip install -r apitest/requirements.txt
    ```
 
-2. 使用仓库根目录的 `.env` 启动完整 Compose 环境：
+2. 使用仓库根目录的私有 `.env.team` 启动完整团队 Compose 环境：
 
    ```powershell
-   docker compose --env-file .env up -d --build
+   docker compose --env-file .env.team up -d --build
    ```
 
 3. 确认 A 班至少有一份 `READY` 材料和知识切片。接口套件会读取该材料，但不会删除或修改它。
 
    跨班 MCP 检查另需 B 班教师 `teacher-b`，密码与 `APITEST_TEACHER_PASSWORD`（或其演示密码回退值）一致。默认演示种子只创建 `teacher-a/student-a1/student-b1`，不会创建该教师；请在专用测试环境准备，套件不会自动创建或修改账号。A 班还需一个已启用智能体，用例会临时更新并恢复它。
 
-4. `.env` 至少提供 `DEMO_SEED_PASSWORD`、`MYSQL_USER`、`MYSQL_PASSWORD`、`MYSQL_DATABASE` 和与 Compose 中 `mcp-demo` 一致的 `MCP_AUTH_TOKEN`。可选配置如下：
+4. `.env.team` 至少提供 `DEMO_SEED_PASSWORD`、`MYSQL_USER`、`MYSQL_PASSWORD`、`MYSQL_DATABASE` 和与 Compose 中 `mcp-demo` 一致的 `MCP_AUTH_TOKEN`。可选配置如下：
 
    | 变量 | 默认值 | 用途 |
    | --- | --- | --- |
-   | `APITEST_BASE_URL` | `http://127.0.0.1:8080` | 前端代理入口 |
+   | `APITEST_ENV_FILE` | 仓库 `.env` | 显式选择私有配置；团队验收设为 `.env.team` |
+   | `APITEST_BASE_URL` | 所选文件的 APP_PORT；未设置时 8080 | 前端代理入口，团队默认 18080 |
    | `APITEST_TEACHER_USERNAME` | `teacher-a` | 教师测试账号 |
    | `APITEST_STUDENT_USERNAME` | `student-a1` | 学生测试账号 |
    | `APITEST_TEACHER_PASSWORD` | 回退到 `DEMO_SEED_PASSWORD` | 教师密码 |
@@ -37,6 +38,7 @@
 ## 执行
 
 ```powershell
+$env:APITEST_ENV_FILE='.env.team'
 python apitest/run_all.py
 ```
 

@@ -1,3 +1,5 @@
+name: campusclaw-plus
+
 x-grading-environment: &grading-environment
   GRADING_MAX_ATTEMPTS: ${GRADING_MAX_ATTEMPTS:-5}
   GRADING_BACKOFF_BASE: ${GRADING_BACKOFF_BASE:-5s}
@@ -23,7 +25,7 @@ services:
     image: mysql:8.4
     restart: unless-stopped
     ports:
-      - "127.0.0.1:${MYSQL_HOST_PORT:-3306}:3306"
+      - "127.0.0.1:${MYSQL_HOST_PORT:-13306}:3306"
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-campusclaw}
@@ -60,7 +62,7 @@ services:
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
     ports:
-      - "127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+      - "127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15673}:15672"
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 5s
@@ -83,6 +85,7 @@ services:
       start_period: 5s
 
   backend:
+    image: ${COMPOSE_PROJECT_NAME:-campusclaw-plus}-backend:local
     build:
       context: ./backend
     restart: unless-stopped
@@ -145,6 +148,7 @@ services:
       start_period: 30s
 
   grading-worker:
+    image: ${COMPOSE_PROJECT_NAME:-campusclaw-plus}-backend:local
     build:
       context: ./backend
     restart: unless-stopped
@@ -198,7 +202,7 @@ services:
       context: ./frontend
     restart: unless-stopped
     ports:
-      - "8080:80"
+      - "127.0.0.1:${APP_PORT:-18080}:80"
     depends_on:
       backend:
         condition: service_healthy
