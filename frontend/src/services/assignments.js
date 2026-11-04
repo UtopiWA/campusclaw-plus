@@ -18,6 +18,6 @@ export const submitAssignment = (id, content, idempotencyKey) => apiRequest(
   },
 )
 
-export const getGradingTask = (taskId) => apiRequest(`/api/grading/tasks/${taskId}`)
+export const getGradingTask = (taskId, options = {}) => apiRequest(`/api/grading/tasks/${taskId}`, options)
 
-export const listTeacherSubmissions = (id) => apiRequest(`/api/assignments/${id}/submissions`)
+export const listTeacherSubmissions = (id, options = {}) => apiRequest(`/api/assignments/${id}/submissions`, options)

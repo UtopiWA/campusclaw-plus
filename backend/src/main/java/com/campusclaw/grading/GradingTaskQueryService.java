@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -45,7 +46,8 @@ public class GradingTaskQueryService {
     public GradingTaskView view(String taskId, UserAccount user) {
         GradingTask task = tasks.findById(taskId).orElseThrow(NotFoundException::new);
         boolean allowed = switch (user.getRole()) {
-            case STUDENT -> user.getId().equals(task.getStudentId());
+            case STUDENT -> user.getId().equals(task.getStudentId())
+                    && user.getClassId().equals(task.getClassId());
             case TEACHER -> user.getClassId().equals(task.getClassId());
         };
         if (!allowed) throw new NotFoundException();
@@ -63,7 +65,7 @@ public class GradingTaskQueryService {
                 .filter(Assignment::isGradable)
                 .orElseThrow(NotFoundException::new);
         List<Submission> items = submissions.findByAssignmentIdAndClassIdOrderByStudentIdAscVersionDesc(
-                assignment.getId(), teacher.getClassId());
+                assignment.getId(), teacher.getClassId(), PageRequest.of(0, 200));
         if (items.isEmpty()) return List.of();
         List<Long> submissionIds = items.stream().map(Submission::getId).toList();
         Map<Long, GradingTask> taskBySubmission = new HashMap<>();

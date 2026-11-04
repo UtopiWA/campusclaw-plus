@@ -14,7 +14,6 @@ import java.time.Instant;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.support.AmqpHeaders;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 
@@ -78,14 +77,10 @@ public class GradingWorker {
             Assignment assignment = assignments.findById(task.getAssignmentId())
                     .orElseThrow(() -> new GradingNonRetryableException("ASSIGNMENT_MISSING"));
             GradingOutcome outcome = model.grade(assignment, submission);
-            try {
-                completion.complete(taskId, submission.getId(), submission.getVersion(), outcome);
-            } catch (DataIntegrityViolationException conflict) {
-                // 唯一约束已经保存了同一提交版本的结果；只补齐终态。
-                completion.markSucceededAfterConflict(taskId);
-            }
-            GradingLog.event("grading_task_completed", taskId, "SUCCEEDED",
-                    task.getAttempts(), elapsedMillis(started), null);
+            boolean completed = completion.complete(taskId, task.getAttempts(), submission.getId(),
+                    submission.getVersion(), outcome);
+            GradingLog.event(completed ? "grading_task_completed" : "grading_task_skipped", taskId,
+                    completed ? "SUCCEEDED" : "SKIPPED", task.getAttempts(), elapsedMillis(started), null);
         } catch (GradingRetryableException exception) {
             handleFailure(task, exception.code(), true, started);
         } catch (GradingNonRetryableException exception) {
@@ -98,15 +93,17 @@ public class GradingWorker {
 
     private void handleFailure(GradingTask task, String code, boolean retryable, long started) {
         if (!retryable || task.getAttempts() >= task.getMaxAttempts()) {
-            completion.fail(task.getTaskId(), code);
-            GradingLog.event("grading_task_completed", task.getTaskId(), "FAILED",
-                    task.getAttempts(), elapsedMillis(started), code);
+            if (completion.fail(task.getTaskId(), task.getAttempts(), code)) {
+                GradingLog.event("grading_task_completed", task.getTaskId(), "FAILED",
+                        task.getAttempts(), elapsedMillis(started), code);
+            }
             return;
         }
         Instant next = GradingBackoff.next(properties, task.getAttempts());
-        completion.scheduleRetry(task.getTaskId(), code, next);
-        GradingLog.event("grading_retry_scheduled", task.getTaskId(), "PENDING",
-                task.getAttempts(), elapsedMillis(started), code);
+        if (completion.scheduleRetry(task.getTaskId(), task.getAttempts(), code, next)) {
+            GradingLog.event("grading_retry_scheduled", task.getTaskId(), "PENDING",
+                    task.getAttempts(), elapsedMillis(started), code);
+        }
     }
 
     private long elapsedMillis(long started) {

@@ -60,7 +60,7 @@ public class OpenAiChatGateway implements ChatGateway {
 
     @Override
     public String complete(List<ChatMessage> messages) {
-        JsonNode response = requests.withOneRetry("Chat service", () -> client.post()
+        JsonNode response = requests.withClassifiedRetry("Chat service", () -> client.post()
                 .uri("/chat/completions")
                 .body(requestBody(messages, false))
                 .retrieve()

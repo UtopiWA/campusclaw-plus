@@ -57,7 +57,7 @@ public class SubmissionService {
         }
         String key = normalizeClientKey(clientKey);
         Assignment assignment = assignments
-                .findByIdAndClassIdAndGradableTrue(assignmentId, user.getClassId())
+                .lockForSubmission(assignmentId, user.getClassId())
                 .orElseThrow(NotFoundException::new);
         if (key != null) {
             var byKey = submissions.findFirstByAssignmentIdAndStudentIdAndClientKey(

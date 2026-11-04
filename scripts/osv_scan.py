@@ -25,6 +25,10 @@ LOGS = BACKEND / "target" / "scan-logs"
 PATTERN = re.compile(r"^([^:\s]+):([^:\s]+):(?:jar|pom):([^:\s]+):")
 
 
+class ScanIncomplete(Exception):
+    pass
+
+
 def maven() -> list[str]:
     java = shutil.which("java")
     if not java:
@@ -36,6 +40,7 @@ def maven() -> list[str]:
 
 
 def dependencies() -> list[tuple[str, str, str]]:
+    REPORT.unlink(missing_ok=True)
     command = maven() + ["-q", "dependency:list", "-DincludeScope=runtime",
                          "-DoutputFile=target/dependency-list.txt"]
     result = subprocess.run(command, cwd=ROOT, stdout=subprocess.DEVNULL,
@@ -47,6 +52,8 @@ def dependencies() -> list[tuple[str, str, str]]:
         match = PATTERN.match(line.strip())
         if match:
             found.add((match.group(1), match.group(2), match.group(3)))
+    if not found:
+        raise ScanIncomplete("empty dependency list")
     return sorted(found)
 
 
@@ -60,12 +67,16 @@ def query(group: str, artifact: str, version: str) -> list[dict]:
     for attempt in range(2):
         try:
             with urllib.request.urlopen(request, timeout=20) as response:
-                return json.loads(response.read()).get("vulns", [])
-        except (urllib.error.URLError, TimeoutError):
+                data = json.loads(response.read())
+                vulnerabilities = data.get("vulns", [])
+                if not isinstance(vulnerabilities, list):
+                    raise ValueError("invalid vulnerability response")
+                return vulnerabilities
+        except (urllib.error.URLError, TimeoutError, ValueError, OSError):
             if attempt == 1:
-                return []
+                raise ScanIncomplete(f"query failed: {group}:{artifact}:{version}") from None
             time.sleep(1)
-    return []
+    raise ScanIncomplete("query did not complete")
 
 
 def severity(vulnerability: dict) -> str:
@@ -74,13 +85,23 @@ def severity(vulnerability: dict) -> str:
         return str(direct).upper()
     for item in vulnerability.get("severity", []) or []:
         if item.get("type", "").startswith("CVSS"):
-            return str(item.get("score", "")).upper()
+            score = str(item.get("score", ""))
+            try:
+                numeric = float(score)
+            except ValueError:
+                continue
+            return "CRITICAL" if numeric >= 9 else "HIGH" if numeric >= 7 else "MEDIUM" if numeric >= 4 else "LOW"
     return "UNKNOWN"
 
 
 def main() -> int:
-    items = dependencies()
+    try:
+        items = dependencies()
+    except ScanIncomplete as exception:
+        print(f"INCOMPLETE: {exception}")
+        return 2
     results: list[tuple[str, str, str, dict]] = []
+    failures = []
     with ThreadPoolExecutor(max_workers=6) as pool:
         futures = {
             pool.submit(query, group, artifact, version): (group, artifact, version)
@@ -88,21 +109,36 @@ def main() -> int:
         }
         for future in as_completed(futures):
             group, artifact, version = futures[future]
-            for vulnerability in future.result():
+            try:
+                vulnerabilities = future.result()
+            except ScanIncomplete:
+                failures.append(f"{group}:{artifact}:{version}")
+                continue
+            for vulnerability in vulnerabilities:
                 results.append((group, artifact, version, vulnerability))
     results.sort(key=lambda item: (item[0], item[1], item[2], item[3].get("id", "")))
     LOGS.mkdir(parents=True, exist_ok=True)
+    (LOGS / "java-osv.json").write_text(json.dumps({
+        "dependencies": len(items), "queryFailures": sorted(failures),
+        "findings": [{"package": f"{g}:{a}:{v}", "advisory": item} for g, a, v, item in results],
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
     (LOGS / "java-osv.log").write_text(
         "\n".join(f"{g}:{a}:{v} {item.get('id')} {severity(item)} {item.get('summary', '')}"
                   for g, a, v, item in results) + ("\n" if results else ""),
         encoding="utf-8")
-    print(f"dependencies checked: {len(items)}, vulnerabilities: {len(results)}")
+    print(f"dependencies checked: {len(items) - len(failures)}/{len(items)}, vulnerabilities: {len(results)}")
     high = 0
+    unknown = 0
     for group, artifact, version, item in results:
         level = severity(item)
         print(f"{group}:{artifact}:{version} {item.get('id')} {level}")
-        if level in {"CRITICAL", "HIGH"} or "9." in level or "8." in level or "7." in level:
+        if level in {"CRITICAL", "HIGH"}:
             high += 1
+        elif level not in {"LOW", "MEDIUM", "MODERATE"}:
+            unknown += 1
+    if failures or unknown:
+        print(f"INCOMPLETE: query failures={len(failures)}, unknown severities={unknown}")
+        return 2
     return 1 if high else 0
 
 

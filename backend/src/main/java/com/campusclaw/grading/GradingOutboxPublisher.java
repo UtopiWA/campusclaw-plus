@@ -50,7 +50,7 @@ public class GradingOutboxPublisher {
                     payload, correlation);
             CorrelationData.Confirm confirm = correlation.getFuture()
                     .get(properties.confirmTimeout().toMillis(), TimeUnit.MILLISECONDS);
-            if (!confirm.isAck()) {
+            if (!confirm.isAck() || correlation.getReturned() != null) {
                 throw new IllegalStateException("publish not confirmed");
             }
             event.markPublished();

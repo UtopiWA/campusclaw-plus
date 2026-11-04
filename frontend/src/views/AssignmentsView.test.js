@@ -87,10 +87,11 @@ describe('AssignmentsView', () => {
     await vi.advanceTimersByTimeAsync(2000)
     await flushPromises()
 
-    expect(getGradingTask).toHaveBeenCalledWith('task-1')
+    expect(getGradingTask).toHaveBeenCalledWith('task-1', expect.objectContaining({ signal: expect.anything() }))
     expect(wrapper.text()).toContain('已完成')
     expect(wrapper.text()).toContain('80')
     expect(wrapper.text()).toContain('模型辅助分项判断')
+    wrapper.unmount()
   })
 
   it('shows teacher create action and class submissions', async () => {
@@ -110,5 +111,46 @@ describe('AssignmentsView', () => {
     expect(wrapper.text()).toContain('本班提交与结果')
     expect(wrapper.text()).toContain('student-a1')
     expect(wrapper.text()).toContain('80 / 100')
+    wrapper.unmount()
+  })
+
+  it('restores the latest task on initial page load', async () => {
+    vi.mocked(listAssignments).mockResolvedValue([{
+      ...assignment, myLatest: { taskId: 'saved-task', status: 'SUCCEEDED' },
+    }])
+    vi.mocked(getGradingTask).mockResolvedValue({ taskId: 'saved-task', status: 'SUCCEEDED', result: null })
+    const wrapper = mountView()
+    await flushPromises()
+    expect(getGradingTask).toHaveBeenCalledWith('saved-task', expect.anything())
+    expect(wrapper.text()).toContain('已完成')
+    expect(submitAssignment).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it.each(['switch', 'unmount'])('discards an in-flight poll after %s', async (action) => {
+    vi.useFakeTimers()
+    vi.mocked(listAssignments).mockResolvedValue([
+      { ...assignment, myLatest: { taskId: 'old-task', status: 'PENDING' } },
+      { ...assignment, id: 2, title: '第二份作业' },
+    ])
+    let finishPoll
+    vi.mocked(getGradingTask).mockResolvedValueOnce({ taskId: 'old-task', status: 'PENDING' })
+      .mockImplementationOnce(() => new Promise((resolve) => { finishPoll = resolve }))
+    const wrapper = mountView()
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(2000)
+    const signal = vi.mocked(getGradingTask).mock.calls[1][1].signal
+    if (action === 'switch') await wrapper.findAll('.assignment-item')[1].trigger('click')
+    else wrapper.unmount()
+    expect(signal.aborted).toBe(true)
+    finishPoll({ taskId: 'old-task', status: 'RUNNING' })
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(20000)
+    expect(getGradingTask).toHaveBeenCalledTimes(2)
+    if (action === 'switch') {
+      expect(wrapper.find('.assignment-item--active').text()).toContain('第二份作业')
+      expect(wrapper.text()).not.toContain('批改中')
+      wrapper.unmount()
+    }
   })
 })

@@ -1,6 +1,6 @@
 # Class08 异步作业批改验收记录
 
-状态：**技术实现与三条核心判据验收完成；同伴评审、规格同步、归档和版本标签待团队完成。** 未完成项不记为通过。
+状态：**交接后的独立 Docker/功能复核和修正已执行；成员 A 暂不接受依赖风险，Class08 保持活动，不同步主规格、不归档、不提交。标签未授权。** 第 0～6 节保留实现方原始记录，第 7 节为本次独立结果，未完成项不记为通过。
 
 - 关联 change：[2026-11-03-add-async-assignment-grading](../../openspec/changes/2026-11-03-add-async-assignment-grading/proposal.md)
 - 能力规约：[assignment-grading](../../openspec/changes/2026-11-03-add-async-assignment-grading/specs/assignment-grading/spec.md)、[reliable-task-execution](../../openspec/changes/2026-11-03-add-async-assignment-grading/specs/reliable-task-execution/spec.md)
@@ -102,3 +102,64 @@
 - 不把材料索引的既有异步能力当作本课队列/批改已完成。
 - 不把设计文档、health 200、队列存在或某次顺利路径当作全部通过。
 - 未完成自审、交叉评审、测试/扫描或证据入库的代码不得合入主干。
+
+## 7. 交接后的独立复现（2026-11-04）
+
+接手基线为 `5cdd020`，实际测试对象为该基线加本轮复核修正的源码/镜像。以下结果由接收方代理在独立环境实际执行，不复用实现方的通过结论，也不代替成员 A 的最终确认。问题及逐文件结论见 [review.md 第 7 节](review.md#7-交接后的独立技术复核2026-11-04)。
+
+### 7.1 环境与自动检查
+
+独立 Compose 项目 `cc08-peer`，新建 MySQL 8.4、Qdrant 1.15.4、RabbitMQ 4.4.0 卷及合成口令；不连接现有应用数据库。Web/worker 使用 Dockerfile 的 Java 17 镜像；宿主 Java 20.0.2、Node 22.21.1、Python 3.11.2，Docker Engine 29.8.2 / Compose 5.6.0。模型为私下配置的真实服务。前端先 npm ci，使用锁文件中的 Vitest 4.1.12；部分开发依赖有 Node 补丁版本 engines 警告，未忽略记录。
+
+| 实际执行 | 本次结果 |
+| --- | --- |
+| `python scripts/check.py --mode unit` | 最终退出 0：前端 12 文件/76 项及构建、后端 184 项、MCP 8 项、脚本 18 项；无失败/错误/跳过 |
+| `python scripts/check.py --mode integration` | 最终退出 0，22 项；本机 Docker 客户端适配通过测试专用 `TESTCONTAINERS_API_VERSION=1.44` 指定，不影响应用配置 |
+| `python scripts/check.py --mode api` | 退出 0；独立 READY 材料、B 班教师和受控账号；8 个业务脚本及 4 项清理通过 |
+| 独立镜像构建/启动 | 通过；首次暴露 worker 与 Web 同时建 Qdrant collection 的竞态，修正后另用 `cc08-cold` 的全新卷同时启动成功并清理 |
+| `python scripts/scan.py`（临时虚拟环境） | 完整执行退出 1：规范/静态分析、pip-audit、npm high 阈值检查通过；OSV 103/103 查询完整，2 critical + 5 moderate 保留 |
+| 最后小批量恢复及脚本修正 | Java Checkstyle/SpotBugs 与 Python Ruff 均退出 0；最终真实恢复复验 SUCCEEDED、attempts=2 |
+
+首次 scan 因宿主缺 Ruff 失败，后在忽略目录内创建临时虚拟环境，安装 Ruff 0.17.3 / pip-audit 2.10.1 后重跑。未执行 OWASP/NVD 补充检查，未运行单独的 `--mode all`（unit/integration/api 已分别执行）；不宣称扫描全部通过。V7→V8 旧库/旧应用兼容性沿用实现方已有记录，本次独立确认了空库迁移和新版本现有业务回归，没有把沿用项标为本次独立通过。
+
+### 7.2 三条核心判据与故障
+
+| 判据/场景 | 本次实际结果 |
+| --- | --- |
+| 请求不等待 | 三次提交 90.1 / 60.8 / 28.8 ms，后台 2813 / 1756 / 1821 ms；均 202、PENDING、不含分数，最终 SUCCEEDED。以这 3 个样本的最近秩口径，提交 P95=90.1 ms，显著小于后台耗时；不是压力测试 |
+| 停消费者不丢任务 | 停 `grading-worker` 后新提交保持 PENDING，队列 ready≥1、consumers=0；恢复后 SUCCEEDED，无须重新提交 |
+| 重复不产生重复结果 | 已完成任务重投后结果行数 1，结果 ID/分数/创建时间及任务视图不变；相同内容重提返回同一 task |
+| 不可重试失败/DLQ | 自有合成作业评分依据临时设为不合法结构，任务 FAILED / ASSIGNMENT_INVALID，attempts=1，DLQ 实读 1 条；随后恢复原评分依据 |
+| 模拟 RUNNING 回收 | 新建自有任务设为 5 分钟前 RUNNING、attempts=1，恢复后真实模型完成 SUCCEEDED、attempts=2；最终分批恢复修正另做聚焦复验 |
+| 并发与事务 | 实际 MySQL 两线程验证相同内容同 task、不同内容版本递增；发件箱保存异常后提交/任务均回滚；旧 attempt 的成功/失败/重试回写被拒 |
+| 权限 | 学生创建 403、跨班作业/任务 404、匿名 401、学生提交列表 403、教师 200；null 评分项 400；调班后的任务访问由专门单测拒绝 |
+
+不同内容/不同任务的模型分项判断可能不同；本次只验证同一结果不被重投覆盖，不宣称模型判断完全确定或等同教师最终成绩。
+
+复现核心流程使用已维护入口，参数可指向新的独立环境：
+
+```powershell
+python scripts/lesson08_acceptance.py basic
+docker compose stop grading-worker
+python scripts/lesson08_acceptance.py pending
+$taskId = Read-Host '输入上一步输出的 taskId'
+docker compose start grading-worker
+python scripts/lesson08_acceptance.py wait --task-id $taskId
+python scripts/lesson08_acceptance.py duplicate --task-id $taskId
+```
+
+本次环境使用 `--env-file backend/target/peer08/private.env --base-url http://127.0.0.1:18080 --management-url http://127.0.0.1:15678`；临时配置已清理且不提交，其他成员按 README 准备自己的配置。故障复现仅对新建合成任务：停 worker 后将该任务设为旧 RUNNING 再恢复；DLQ 用合成作业暂时不合法的 rubric 触发，并在观察失败后还原 rubric。权限操作使用上述具体方法/身份/结果，不能把不存在的接口返回 404 当作鉴权通过。
+
+### 7.3 页面、查询与隐私
+
+本机 Edge 无头实例在独立浏览器上下文中真实执行教师建作业、学生提交、202、刷新恢复、轮询终止和教师查看；刷新没有重新提交。1440/1000/760/470/375 五个宽度均无横向溢出，实际截图只保留在忽略目录。成员原有浏览器资料、口令均未使用。
+
+EXPLAIN：任务读取走主键；发件箱走 `idx_grading_outbox_status_available`，教师查询走提交版本索引；两者仍可能 filesort。恢复通过状态索引过滤并限制批次。这里是小规模合成集验证，LIMIT 限制返回量，不代表数据库检查行数恒为该上限，也未完成生产压测。
+
+最终候选的日志隐私快照共 218 行合法 JSON，字段均在允许集合，未出现测试口令、模型凭据或已知作答文本。普通队列采样时为空，死信实读 1 条，仅 `taskId`；普通消息的字段边界同时静态核对 `GradingMessage` 和发布端序列化，没有冒称对空队列获得了正文样本。
+
+### 7.4 失败记录与收尾状态
+
+- 保留曾失败的检查：缺 Ruff；网关永久拒绝分类最初误改 Embedding 重试次数（已缩回模型非流式范围并通过旧回归）；首次 Web/worker 初始化竞态；队列统计未收敛；故障夹具未恢复导致页面 500；后端重建后 Nginx 旧解析导致 502。修正或清理后重跑对应检查，不把失败输出删掉冒充从未发生。
+- OSV 两项 Spring 告警及 5 项 moderate、npm 的 1 low/11 moderate、OWASP 未运行均保留。成员 A 已明确暂不接受风险，依据与决定见 review 7.5；独立升级 change 仅完成规划，未降低阈值、未实施依赖升级。
+- 当前仅技术复核完成；成员 A 未接受风险，主规格同步、归档、提交/推送暂停，标签未授权。`cc08-peer`/`cc08-cold` 的本轮自建容器和卷、临时凭据副本已清理，原始 `.env` 和其他数据未修改。

@@ -26,9 +26,9 @@ public class GradingTaskCompletionService {
     }
 
     @Transactional
-    public void complete(String taskId, Long submissionId, int version, GradingOutcome outcome) {
-        GradingTask task = tasks.findById(taskId).orElseThrow();
-        if (task.getStatus() != GradingTaskStatus.RUNNING) return;
+    public boolean complete(String taskId, int attempt, Long submissionId, int version, GradingOutcome outcome) {
+        GradingTask task = tasks.lockById(taskId).orElseThrow();
+        if (!ownsAttempt(task, attempt)) return false;
         if (results.findBySubmissionIdAndVersion(submissionId, version).isEmpty()) {
             results.saveAndFlush(new GradingResult(taskId, submissionId, version, outcome.score(),
                     outcome.maxScore(), outcome.criteriaJson(), outcome.rationale(),
@@ -36,34 +36,31 @@ public class GradingTaskCompletionService {
         }
         task.markSucceeded();
         tasks.save(task);
-    }
-
-    /** 结果已由并发执行写入时，只补齐任务终态，不覆盖结果。 */
-    @Transactional
-    public void markSucceededAfterConflict(String taskId) {
-        GradingTask task = tasks.findById(taskId).orElseThrow();
-        if (task.getStatus() == GradingTaskStatus.SUCCEEDED) return;
-        task.markSucceeded();
-        tasks.save(task);
+        return true;
     }
 
     @Transactional
-    public void scheduleRetry(String taskId, String code, Instant nextAttempt) {
-        GradingTask task = tasks.findById(taskId).orElseThrow();
-        if (task.getStatus() != GradingTaskStatus.RUNNING) return;
+    public boolean scheduleRetry(String taskId, int attempt, String code, Instant nextAttempt) {
+        GradingTask task = tasks.lockById(taskId).orElseThrow();
+        if (!ownsAttempt(task, attempt)) return false;
         task.scheduleRetry(nextAttempt, code);
         tasks.save(task);
         outbox.save(new GradingOutbox(GradingEventType.GRADING_RETRY, taskId, nextAttempt));
+        return true;
     }
 
     @Transactional
-    public void fail(String taskId, String code) {
-        GradingTask task = tasks.findById(taskId).orElseThrow();
-        if (task.getStatus() == GradingTaskStatus.SUCCEEDED || task.getStatus() == GradingTaskStatus.FAILED) {
-            return;
-        }
+    public boolean fail(String taskId, int attempt, String code) {
+        GradingTask task = tasks.lockById(taskId).orElseThrow();
+        if (!ownsAttempt(task, attempt)) return false;
         task.markFailed(code);
         tasks.save(task);
         outbox.save(new GradingOutbox(GradingEventType.GRADING_DEAD_LETTER, taskId, Instant.now()));
+        return true;
+    }
+
+    /** 回收后旧执行可能迟到，只有当前认领的执行次数可以写回。 */
+    private boolean ownsAttempt(GradingTask task, int attempt) {
+        return task.getStatus() == GradingTaskStatus.RUNNING && task.getAttempts() == attempt;
     }
 }

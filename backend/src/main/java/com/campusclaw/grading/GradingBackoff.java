@@ -19,7 +19,7 @@ public final class GradingBackoff {
         }
         long capped = Math.min(raw, properties.backoffMax().toMillis());
         double jitter = 1.0 + ThreadLocalRandom.current().nextDouble() * properties.backoffJitter();
-        long delay = Math.max(1L, (long) Math.ceil(capped * jitter));
+        long delay = Math.max(1L, Math.min(properties.backoffMax().toMillis(), (long) Math.ceil(capped * jitter)));
         return Instant.now().plusMillis(delay);
     }
 }

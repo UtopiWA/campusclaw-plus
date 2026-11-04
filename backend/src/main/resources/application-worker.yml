@@ -4,6 +4,8 @@ server:
 app:
   demo-seed:
     enabled: false
+  retrieval:
+    initialize-vector-store: false
   grading:
     worker-enabled: true
     publisher-enabled: false

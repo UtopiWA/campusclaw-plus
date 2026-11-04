@@ -121,6 +121,7 @@ class CampusClawIntegrationTest {
         registry.add("app.chat.api-key", () -> "test-chat-key");
         registry.add("app.chat.model", () -> "test-chat");
         registry.add("app.retrieval.initialize-vector-store", () -> false);
+        registry.add("app.grading.publisher-enabled", () -> false);
     }
 
     @Autowired MockMvc mockMvc;
@@ -145,12 +146,16 @@ class CampusClawIntegrationTest {
     @MockBean VectorStoreGateway vectors;
     @MockBean ChatGateway chat;
     @MockBean com.campusclaw.health.QdrantHealthProbe qdrantHealth;
+    @Autowired com.campusclaw.grading.AssignmentService gradingAssignments;
+    @Autowired com.campusclaw.grading.SubmissionService gradingSubmissions;
+    @SpyBean com.campusclaw.persistence.GradingOutboxRepository gradingOutbox;
 
     @BeforeEach
     void restoreSpy() {
         when(qdrantHealth.isReady()).thenReturn(true);
         reset(knowledgeEntries);
         reset(embeddings, vectors, chat);
+        reset(gradingOutbox);
         org.mockito.Mockito.when(embeddings.embed(any())).thenAnswer(invocation -> {
             java.util.List<String> values = invocation.getArgument(0);
             return values.stream().map(value -> java.util.List.of(0.1, 0.2, 0.3)).toList();
@@ -966,6 +971,76 @@ class CampusClawIntegrationTest {
         }
         assertThat(materials.findById(materialId).orElseThrow().getIndexStatus().name())
                 .isEqualTo(expected);
+    }
+
+    @Test
+    void gradingConcurrentDuplicateSubmissionsReturnTheSameTask() throws Exception {
+        var teacher = users.findByUsername("teacher-a").orElseThrow();
+        var student = users.findByUsername("student-a1").orElseThrow();
+        var assignment = gradingAssignments.create(new com.campusclaw.grading.CreateAssignmentRequest(
+                "Concurrent duplicate", "Explain a rule",
+                java.util.List.of(new com.campusclaw.grading.RubricCriterion("c1", "Correct", 100))), teacher);
+        var start = new java.util.concurrent.CountDownLatch(1);
+        var first = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+            awaitLatch(start);
+            return gradingSubmissions.submit(assignment.id(), "same answer", "same-key", student);
+        });
+        var second = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+            awaitLatch(start);
+            return gradingSubmissions.submit(assignment.id(), "same answer", "same-key", student);
+        });
+        start.countDown();
+        assertThat(first.get(15, java.util.concurrent.TimeUnit.SECONDS).taskId())
+                .isEqualTo(second.get(15, java.util.concurrent.TimeUnit.SECONDS).taskId());
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM submissions WHERE assignment_id=?",
+                Integer.class, assignment.id())).isEqualTo(1);
+        verifyNoInteractions(chat);
+    }
+
+    @Test
+    void gradingConcurrentDifferentAnswersReceiveSequentialVersions() throws Exception {
+        var teacher = users.findByUsername("teacher-a").orElseThrow();
+        var student = users.findByUsername("student-a1").orElseThrow();
+        var assignment = gradingAssignments.create(new com.campusclaw.grading.CreateAssignmentRequest(
+                "Concurrent versions", "Explain a rule",
+                java.util.List.of(new com.campusclaw.grading.RubricCriterion("c1", "Correct", 100))), teacher);
+        var start = new java.util.concurrent.CountDownLatch(1);
+        var first = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+            awaitLatch(start);
+            return gradingSubmissions.submit(assignment.id(), "answer one", null, student);
+        });
+        var second = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+            awaitLatch(start);
+            return gradingSubmissions.submit(assignment.id(), "answer two", null, student);
+        });
+        start.countDown();
+        assertThat(java.util.Set.of(first.get(15, java.util.concurrent.TimeUnit.SECONDS).version(),
+                second.get(15, java.util.concurrent.TimeUnit.SECONDS).version())).containsExactlyInAnyOrder(1, 2);
+    }
+
+    @Test
+    void gradingOutboxFailureRollsBackSubmissionAndTask() {
+        var teacher = users.findByUsername("teacher-a").orElseThrow();
+        var student = users.findByUsername("student-a1").orElseThrow();
+        var assignment = gradingAssignments.create(new com.campusclaw.grading.CreateAssignmentRequest(
+                "Atomic rollback", "Explain a rule",
+                java.util.List.of(new com.campusclaw.grading.RubricCriterion("c1", "Correct", 100))), teacher);
+        doThrow(new DataIntegrityViolationException("synthetic outbox failure")).when(gradingOutbox).save(any());
+        org.junit.jupiter.api.Assertions.assertThrows(DataIntegrityViolationException.class,
+                () -> gradingSubmissions.submit(assignment.id(), "answer", null, student));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM submissions WHERE assignment_id=?",
+                Integer.class, assignment.id())).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM grading_tasks WHERE assignment_id=?",
+                Integer.class, assignment.id())).isZero();
+    }
+
+    private static void awaitLatch(java.util.concurrent.CountDownLatch latch) {
+        try {
+            latch.await();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(exception);
+        }
     }
 
     private String login(String username) throws Exception {

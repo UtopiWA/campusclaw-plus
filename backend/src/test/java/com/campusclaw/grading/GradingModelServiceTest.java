@@ -81,6 +81,23 @@ class GradingModelServiceTest {
         assertEquals(60, outcome.score());
     }
 
+    @Test
+    void rejectsMissingRationaleNullVerdictAndTrailingJson() {
+        String valid = """
+                {"criteria":[
+                  {"key":"c1","verdict":"MET","evidence":"e","explanation":"x"},
+                  {"key":"c2","verdict":"MET","evidence":"e","explanation":"x"}
+                ],"overallRationale":"x"}
+                """.trim();
+        for (String invalid : List.of(valid.replace(",\"overallRationale\":\"x\"", ""),
+                valid.replace("\"verdict\":\"MET\"", "\"verdict\":null"), valid + " {}")) {
+            ChatGateway chat = mock(ChatGateway.class);
+            when(chat.complete(anyList())).thenReturn(invalid);
+            assertEquals("MODEL_OUTPUT_INVALID", assertThrows(GradingRetryableException.class,
+                    () -> service(chat).grade(assignment(), submission())).code());
+        }
+    }
+
     private GradingModelService service(ChatGateway chat) {
         ObjectMapper mapper = new ObjectMapper()
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, true);

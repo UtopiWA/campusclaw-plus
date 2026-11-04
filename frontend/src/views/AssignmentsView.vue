@@ -25,6 +25,10 @@ const submitContent = ref('')
 const task = ref(null)
 const pollAttempts = ref(0)
 let pollTimer = null
+let selectionVersion = 0
+let disposed = false
+let taskRequest = null
+let submissionsRequest = null
 
 const createOpen = ref(false)
 const createBusy = ref(false)
@@ -59,6 +63,7 @@ function failureLabel(code) {
   return ({
     MODEL_UNAVAILABLE: '模型服务暂时不可用',
     MODEL_OUTPUT_INVALID: '模型输出不符合评分格式',
+    MODEL_REQUEST_REJECTED: '模型服务拒绝请求，请联系教师检查配置',
     ASSIGNMENT_INVALID: '作业评分依据无效',
     SUBMISSION_MISSING: '关联作答不存在',
     ASSIGNMENT_MISSING: '关联作业不存在',
@@ -78,7 +83,15 @@ function stopPolling() {
   }
 }
 
+function cancelSelection() {
+  selectionVersion += 1
+  stopPolling()
+  taskRequest?.abort()
+  submissionsRequest?.abort()
+}
+
 function schedulePoll() {
+  if (disposed) return
   stopPolling()
   const delay = Math.min(10000, 2000 * Math.pow(1.4, pollAttempts.value))
   pollTimer = setTimeout(pollOnce, delay)
@@ -86,17 +99,24 @@ function schedulePoll() {
 
 async function pollOnce() {
   pollTimer = null
-  if (!task.value?.taskId) return
+  if (disposed || !task.value?.taskId) return
+  const version = selectionVersion
+  const taskId = task.value.taskId
+  const controller = new AbortController()
+  taskRequest = controller
   try {
-    task.value = await getGradingTask(task.value.taskId)
+    const response = await getGradingTask(taskId, { signal: controller.signal })
+    if (disposed || version !== selectionVersion) return
+    task.value = response
+    pollAttempts.value = 0
     if (isTerminal(task.value.status)) {
       stopPolling()
       await reloadQuiet()
     } else {
-      pollAttempts.value += 1
       schedulePoll()
     }
   } catch {
+    if (disposed || version !== selectionVersion || controller.signal.aborted) return
     pollAttempts.value += 1
     if (pollAttempts.value >= 8) {
       stopPolling()
@@ -115,21 +135,28 @@ function startPolling() {
 
 async function reloadQuiet() {
   try {
-    assignments.value = await listAssignments()
+    const items = await listAssignments()
+    if (!disposed) assignments.value = items
   } catch {
     // 保留当前选择；轮询失败由状态卡片展示。
   }
 }
 
 async function resumeFromLatest(item) {
-  stopPolling()
+  cancelSelection()
   task.value = null
   const latest = item?.myLatest
   if (!latest?.taskId) return
+  const version = selectionVersion
+  const controller = new AbortController()
+  taskRequest = controller
   try {
-    task.value = await getGradingTask(latest.taskId)
+    const response = await getGradingTask(latest.taskId, { signal: controller.signal })
+    if (disposed || version !== selectionVersion) return
+    task.value = response
     if (!isTerminal(task.value.status)) startPolling()
   } catch (exception) {
+    if (disposed || version !== selectionVersion || controller.signal.aborted) return
     error.value = message(exception)
   }
 }
@@ -138,12 +165,15 @@ async function loadAssignments() {
   loading.value = true
   error.value = ''
   try {
-    assignments.value = await listAssignments()
+    const items = await listAssignments()
+    if (disposed) return
+    assignments.value = items
     if (selectedId.value && !assignments.value.some((item) => item.id === selectedId.value)) {
       selectedId.value = null
       task.value = null
       stopPolling()
     }
+    if (!selectedId.value && assignments.value.length) selectedId.value = assignments.value[0].id
     if (selected.value && !isTeacher.value) await resumeFromLatest(selected.value)
   } catch (exception) {
     error.value = message(exception)
@@ -153,11 +183,13 @@ async function loadAssignments() {
 }
 
 async function selectAssignment(item) {
+  cancelSelection()
   selectedId.value = item.id
   submitContent.value = ''
   error.value = ''
   notice.value = ''
   task.value = null
+  submissions.value = []
   stopPolling()
   if (isTeacher.value) await loadSubmissions()
   else await resumeFromLatest(item)
@@ -166,12 +198,18 @@ async function selectAssignment(item) {
 async function loadSubmissions() {
   if (!isTeacher.value || !selected.value) return
   submissionsLoading.value = true
+  const version = selectionVersion
+  const controller = new AbortController()
+  submissionsRequest = controller
   try {
-    submissions.value = await listTeacherSubmissions(selected.value.id)
+    const items = await listTeacherSubmissions(selected.value.id, { signal: controller.signal })
+    if (disposed || version !== selectionVersion) return
+    submissions.value = items
   } catch (exception) {
+    if (disposed || version !== selectionVersion || controller.signal.aborted) return
     error.value = message(exception)
   } finally {
-    submissionsLoading.value = false
+    if (!disposed && version === selectionVersion) submissionsLoading.value = false
   }
 }
 
@@ -233,6 +271,7 @@ async function saveAssignment() {
     createOpen.value = false
     notice.value = '作业已创建，本班学生现在可以提交。'
     await loadAssignments()
+    cancelSelection()
     selectedId.value = created.id
     await loadSubmissions()
   } catch (exception) {
@@ -251,17 +290,21 @@ async function submit() {
     return
   }
   submitting.value = true
+  cancelSelection()
   error.value = ''
   notice.value = ''
+  const version = selectionVersion
+  const assignmentId = selected.value.id
   try {
     const key = globalThis.crypto?.randomUUID?.()
       || `ui-${Date.now()}-${Math.random().toString(36).slice(2)}`
-    const response = await submitAssignment(selected.value.id, content, key)
+    const response = await submitAssignment(assignmentId, content, key)
+    if (disposed || version !== selectionVersion) return
     submitContent.value = ''
     task.value = {
       taskId: response.taskId,
       submissionId: response.submissionId,
-      assignmentId: selected.value.id,
+      assignmentId,
       status: response.status,
       attempts: 0,
       maxAttempts: null,
@@ -271,14 +314,19 @@ async function submit() {
     startPolling()
     await reloadQuiet()
   } catch (exception) {
+    if (disposed || version !== selectionVersion) return
     error.value = message(exception)
+    if (task.value && !isTerminal(task.value.status)) startPolling()
   } finally {
     submitting.value = false
   }
 }
 
 onMounted(loadAssignments)
-onBeforeUnmount(stopPolling)
+onBeforeUnmount(() => {
+  disposed = true
+  cancelSelection()
+})
 </script>
 
 <template>
@@ -427,6 +475,7 @@ onBeforeUnmount(stopPolling)
 
             <section v-if="isTeacher" class="assignment-panel submissions-panel">
               <h3>本班提交与结果</h3>
+              <p class="muted">按学生和版本排序，最多显示 200 条提交。</p>
               <p v-if="submissionsLoading" class="muted">正在加载…</p>
               <p v-else-if="!submissions.length" class="muted">本班还没有提交。</p>
               <div v-else class="table-scroll">

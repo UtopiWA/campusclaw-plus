@@ -19,6 +19,7 @@
 | 材料/检索 | `MAX_UPLOAD_BYTES` 默认 2097152；连接/读取 3s/30s；宽召回/双路/强向量为 0.35/0.45/0.55，必须有序，RRF K=60 |
 | 基线版本 | `APP_VERSION` 可覆盖 Maven build-info 的项目版本，匹配 `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`；显式空值/非法值拒绝，不读取本机 Git 路径或远端作为运行依赖 |
 | 测试专用 | `TESTCONTAINERS_API_VERSION` 仅用于检查入口向 Maven 传测试客户端版本，非法值退出 2，不写入应用运行环境 |
+| 异步批改 | RabbitMQ 用户/口令外置；Compose 将模板中的 GRADING 参数传给 Web/worker；回收阈值覆盖两次模型网络预算，时间参数必须为正 |
 
 这里的组合写法代表各个带前缀的配置键，不是一个包含斜杠的变量名。完整现有绑定以 `application.yml`、Compose 和对应 Properties 为准；新增键必须同步绑定、模板格式说明和负向测试。必需秘密/地址缺失须失败；非敏感安全默认值允许沿用，这是明确的继承例外，不机械执行“所有配置无默认值”。
 
@@ -46,7 +47,7 @@ health 不运行 Chat/Embedding 生成、不调 MCP 工具、不列教师配置�
 
 后端日志一行一个合法 JSON，字段 `timestamp/level/logger/event/requestId`；无请求上下文为 null。请求完成事件增加 `method/path/status/durationMs`；path 使用匹配路由模板，未匹配或未进入 MVC 时为 `/unmapped`，不含 query 值。只接受 `[A-Za-z0-9_-]{1,64}` 的单一 `X-Request-Id`，其他情况生成 UUID；响应头回传，异步线程结束恢复上下文，完成事件不重复。
 
-`JsonLogEncoder` 仅接受请求过滤器的固定结构化字段。普通日志标为 `application_log`，原消息、参数和异常堆栈不输出，异常仅保留类名；因此诊断依靠 logger、level、requestId 与固定失败标记，不能期待看到完整异常文本。容器报告异步错误/超时或未处理异常时附加 `failureCode`。已在业务层转为 SSE error 的失败不必触发容器错误，须看既有 SSE/消息状态；不得将 HTTP 200 当作流式业务成功。
+`JsonLogEncoder` 仅接受请求过滤器和 `GradingLog` 的固定结构化字段，批改事件可含 taskId/status/attempts/durationMs/failureCode。普通日志标为 `application_log`，原消息、参数和堆栈不输出，异常仅保留类名；诊断依靠固定字段，不期待完整异常文本。业务 SSE error 不一定触发容器错误，须核对事件/消息状态，不能将 HTTP 200 当整轮成功。
 
 不写密码、Bearer、提示词/用户正文、完整参数/响应、内部地址、绝对路径或供应商原始异常。对异常记录稳定类别/失败代码，不用堆栈绕过脱敏。Nginx/MCP 基础容器现有日志不宣称已统一成后端应用格式；本 change 的 JSON 编码范围为后端，其他服务扩展需另列范围。
 
@@ -89,3 +90,5 @@ health 不运行 Chat/Embedding 生成、不调 MCP 工具、不列教师配置�
 本轮发起方已确认验证通过，另一成员在自己的环境从候选提交启动应用、走通现有功能，并审核实现、文档、已有结果及本次差异中的敏感信息。独立功能复现必须执行，无修改不重跑整套自动测试；有问题则修正并补跑受影响检查。结论记入 `docs/lesson-07/README.md`，通过后由审核成员同步规格、校验、归档并提交，标签按团队需要。
 
 不要求另做规范破坏试验、回滚演练或全历史/镜像扫描；取消项目不记为通过。实际部署、数据清理和远程操作仍按具体目标与权限执行。
+
+Class08 的实际复现与范围另见 `docs/lesson-08/`：worker 关闭材料恢复/Qdrant 初始化；迁移到 V8 后保留数据卷，不执行旧版 V1～V7 示例中的降级假设。重建后端后若 Nginx 仍解析旧地址，可重启同一部署的 frontend；不能据此停止其他项目。

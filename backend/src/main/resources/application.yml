@@ -35,6 +35,7 @@ spring:
     password: ${RABBITMQ_PASSWORD:guest}
     virtual-host: ${RABBITMQ_VHOST:/}
     publisher-confirm-type: correlated
+    publisher-returns: true
     template:
       mandatory: true
     listener:

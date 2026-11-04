@@ -31,6 +31,15 @@ class GradingBackoffTest {
         assertTrue(delay >= 2000 && delay <= 2500, "delay: " + delay);
     }
 
+    @Test
+    void jitterCannotExceedTheMaximumDelay() {
+        for (int index = 0; index < 20; index++) {
+            Instant before = Instant.now();
+            long delay = Duration.between(before, GradingBackoff.next(properties(1.0, Duration.ofSeconds(5)), 10)).toMillis();
+            assertTrue(delay >= 5000 && delay <= 5100, "delay: " + delay);
+        }
+    }
+
     private GradingProperties properties(double jitter, Duration max) {
         return new GradingProperties(false, false, false, 5,
                 Duration.ofSeconds(1), 2, jitter, max,

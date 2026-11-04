@@ -24,16 +24,15 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-import pymysql
-
 ROOT = Path(__file__).resolve().parents[1]
-BASE_URL = "http://127.0.0.1:8081"
+BASE_URL = "http://127.0.0.1:8080"
 MANAGEMENT_URL = "http://127.0.0.1:15672"
+ENV_PATH = ROOT / ".env"
 
 
 def _env() -> dict[str, str]:
     values: dict[str, str] = {}
-    path = ROOT / ".env"
+    path = ENV_PATH
     if not path.is_file():
         return values
     for raw in path.read_text(encoding="utf-8-sig").splitlines():
@@ -41,7 +40,10 @@ def _env() -> dict[str, str]:
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
-        values[key.strip()] = value.strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        values[key.strip()] = value
     return values
 
 
@@ -95,6 +97,8 @@ def submit(student: str, assignment_id: int, content: str) -> tuple[int, dict, f
     elapsed_ms = (time.perf_counter() - started) * 1000
     if status != 202:
         raise SystemExit(f"submit failed: {status} {body}")
+    if any(key in body for key in ("score", "maxScore", "result")):
+        raise SystemExit("202 response unexpectedly contains a grading result")
     return status, body, elapsed_ms
 
 
@@ -158,7 +162,11 @@ def publish_duplicate(task_id: str, env: dict[str, str]) -> None:
 
 
 def database(env: dict[str, str]):
-    return pymysql.connect(host="127.0.0.1", port=3307,
+    # 仅数据库验收需要 PyMySQL；纯参数与请求校验不要求安装接口套件依赖。
+    import pymysql
+
+    return pymysql.connect(host=env.get("MYSQL_HOST", "127.0.0.1"),
+                           port=int(env.get("MYSQL_HOST_PORT", "3306")),
                            user=env.get("MYSQL_USER", "campusclaw"),
                            password=env["MYSQL_PASSWORD"],
                            database=env.get("MYSQL_DATABASE", "campusclaw"),
@@ -183,10 +191,17 @@ def report(env: dict[str, str]) -> None:
 
 
 def main() -> int:
+    global BASE_URL, MANAGEMENT_URL, ENV_PATH
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("basic", "pending", "wait", "duplicate", "report"))
     parser.add_argument("--task-id")
+    parser.add_argument("--env-file", type=Path, default=ENV_PATH)
+    parser.add_argument("--base-url", default="http://127.0.0.1:8080")
+    parser.add_argument("--management-url", default=MANAGEMENT_URL)
     args = parser.parse_args()
+    ENV_PATH = args.env_file
+    BASE_URL = args.base_url.rstrip("/")
+    MANAGEMENT_URL = args.management_url.rstrip("/")
     env = _env()
     password = env.get("DEMO_SEED_PASSWORD")
     if not password:
@@ -208,12 +223,16 @@ def main() -> int:
         print(f"assignment={assignment_id} task={task_id} status={body['status']} "
               f"submit_ms={elapsed_ms:.1f} has_score={'result' in body}")
         if args.mode == "pending":
+            if get_task(student, task_id)["status"] != "PENDING":
+                raise SystemExit("pending check requires a stopped worker")
             return 0
         task = wait_task(student, task_id)
         duration = task_duration_ms(task)
         print(f"final_status={task['status']} attempts={task['attempts']} "
               f"score={(task.get('result') or {}).get('score')} "
               f"maxScore={(task.get('result') or {}).get('maxScore')} task_ms={duration}")
+        if task["status"] != "SUCCEEDED" or not task.get("result"):
+            raise SystemExit("grading did not succeed")
         report(env)
         return 0
 
@@ -222,8 +241,11 @@ def main() -> int:
     if args.mode == "wait":
         task = wait_task(student, args.task_id)
         print(f"final_status={task['status']} attempts={task['attempts']}")
-        return 0
+        return 0 if task["status"] == "SUCCEEDED" else 1
 
+    before = get_task(student, args.task_id)
+    if before["status"] != "SUCCEEDED":
+        raise SystemExit("duplicate check requires a succeeded task")
     publish_duplicate(args.task_id, env)
     time.sleep(2)
     task = get_task(student, args.task_id)
@@ -233,6 +255,8 @@ def main() -> int:
             results = cursor.fetchone()[0]
     print(f"duplicate task={args.task_id} status={task['status']} attempts={task['attempts']} "
           f"results={results}")
+    if results != 1 or task != before:
+        raise SystemExit("duplicate changed task/result or created another result")
     return 0
 
 

@@ -2,6 +2,7 @@ package com.campusclaw.config;
 
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -18,7 +19,7 @@ public record GradingProperties(
         boolean recoveryEnabled,
         @Min(1) int maxAttempts,
         @NotNull Duration backoffBase,
-        @Min(1) int backoffMultiplier,
+        @Min(2) int backoffMultiplier,
         @DecimalMin("0.0") @DecimalMax("1.0") double backoffJitter,
         @NotNull Duration backoffMax,
         @NotNull Duration staleRunningTimeout,
@@ -32,4 +33,13 @@ public record GradingProperties(
         @NotBlank String dispatchRoutingKey,
         @NotBlank String retryRoutingKey,
         @NotBlank String deadLetterRoutingKey) {
+
+    @AssertTrue(message = "Grading durations must be positive and backoff max must cover the base")
+    public boolean isTimingValid() {
+        if (backoffBase == null || backoffMax == null || staleRunningTimeout == null
+                || outboxRetryDelay == null || confirmTimeout == null) return true;
+        return backoffBase.toMillis() > 0 && backoffMax.compareTo(backoffBase) >= 0
+                && staleRunningTimeout.toMillis() > 0 && outboxRetryDelay.toMillis() > 0
+                && confirmTimeout.toMillis() > 0;
+    }
 }

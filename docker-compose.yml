@@ -1,3 +1,23 @@
+x-grading-environment: &grading-environment
+  GRADING_MAX_ATTEMPTS: ${GRADING_MAX_ATTEMPTS:-5}
+  GRADING_BACKOFF_BASE: ${GRADING_BACKOFF_BASE:-5s}
+  GRADING_BACKOFF_MULTIPLIER: ${GRADING_BACKOFF_MULTIPLIER:-2}
+  GRADING_BACKOFF_JITTER: ${GRADING_BACKOFF_JITTER:-0.2}
+  GRADING_BACKOFF_MAX: ${GRADING_BACKOFF_MAX:-5m}
+  GRADING_STALE_TIMEOUT: ${GRADING_STALE_TIMEOUT:-90s}
+  GRADING_OUTBOX_RETRY_DELAY: ${GRADING_OUTBOX_RETRY_DELAY:-5s}
+  GRADING_OUTBOX_BATCH_SIZE: ${GRADING_OUTBOX_BATCH_SIZE:-20}
+  GRADING_CONFIRM_TIMEOUT: ${GRADING_CONFIRM_TIMEOUT:-5s}
+  GRADING_PROMPT_VERSION: ${GRADING_PROMPT_VERSION:-v1}
+  GRADING_PREFETCH: ${GRADING_PREFETCH:-1}
+  GRADING_CONCURRENCY: ${GRADING_CONCURRENCY:-1}
+  GRADING_EXCHANGE: ${GRADING_EXCHANGE:-grading.events}
+  GRADING_TASK_QUEUE: ${GRADING_TASK_QUEUE:-grading.tasks}
+  GRADING_DLQ: ${GRADING_DLQ:-grading.dlq}
+  GRADING_DISPATCH_KEY: ${GRADING_DISPATCH_KEY:-grading.dispatch}
+  GRADING_RETRY_KEY: ${GRADING_RETRY_KEY:-grading.retry}
+  GRADING_DLQ_KEY: ${GRADING_DLQ_KEY:-grading.dead-letter}
+
 services:
   mysql:
     image: mysql:8.4
@@ -67,6 +87,7 @@ services:
       context: ./backend
     restart: unless-stopped
     environment:
+      <<: *grading-environment
       # 未设置时不注入，后端使用构建元数据；显式空值会被后端拒绝。
       APP_VERSION:
       DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-campusclaw}?useUnicode=true&characterEncoding=utf8&connectionTimeZone=UTC
@@ -128,6 +149,7 @@ services:
       context: ./backend
     restart: unless-stopped
     environment:
+      <<: *grading-environment
       SPRING_PROFILES_ACTIVE: worker
       DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-campusclaw}?useUnicode=true&characterEncoding=utf8&connectionTimeZone=UTC
       DB_USERNAME: ${MYSQL_USER:-campusclaw}

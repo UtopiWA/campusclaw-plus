@@ -2,11 +2,13 @@ package com.campusclaw.grading;
 
 import com.campusclaw.config.AppProperties;
 import com.campusclaw.config.GradingProperties;
+import com.campusclaw.common.DependencyRejectedException;
 import com.campusclaw.gateway.ChatGateway;
 import com.campusclaw.gateway.ChatGateway.ChatMessage;
 import com.campusclaw.persistence.Assignment;
 import com.campusclaw.persistence.Submission;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -56,12 +58,17 @@ public class GradingModelService {
             response = chat.complete(List.of(
                     new ChatMessage("system", SYSTEM_PROMPT),
                     new ChatMessage("user", userPrompt(assignment, rubric, submission.getContent()))));
+        } catch (DependencyRejectedException exception) {
+            throw new GradingNonRetryableException("MODEL_REQUEST_REJECTED");
         } catch (RuntimeException exception) {
             throw new GradingRetryableException("MODEL_UNAVAILABLE", exception);
         }
         ModelGradingResponse parsed;
         try {
-            parsed = mapper.readValue(extractJson(response), ModelGradingResponse.class);
+            parsed = mapper.readerFor(ModelGradingResponse.class)
+                    .with(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                    .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                    .readValue(extractJson(response));
         } catch (Exception exception) {
             throw new GradingRetryableException("MODEL_OUTPUT_INVALID", exception);
         }
@@ -74,10 +81,10 @@ public class GradingModelService {
         } catch (Exception exception) {
             throw new GradingRetryableException("MODEL_OUTPUT_INVALID", exception);
         }
-        String rationale = parsed.overallRationale() == null ? "" : parsed.overallRationale().trim();
-        if (rationale.codePointCount(0, rationale.length()) > MAX_RATIONALE_CODE_POINTS) {
+        if (!validText(parsed.overallRationale(), MAX_RATIONALE_CODE_POINTS)) {
             throw new GradingRetryableException("MODEL_OUTPUT_INVALID");
         }
+        String rationale = parsed.overallRationale().trim();
         return new GradingOutcome(Math.min(score, maxScore), maxScore, criteriaJson, rationale,
                 app.chat().model(), properties.promptVersion());
     }
@@ -123,7 +130,7 @@ public class GradingModelService {
         Map<String, ModelGradingResponse.ModelCriterion> byKey = new HashMap<>();
         for (ModelGradingResponse.ModelCriterion item : parsed.criteria()) {
             if (item == null || item.key() == null || !expected.containsKey(item.key())
-                    || !seen.add(item.key()) || !VERDICTS.contains(item.verdict())) {
+                    || !seen.add(item.key()) || item.verdict() == null || !VERDICTS.contains(item.verdict())) {
                 throw new GradingRetryableException("MODEL_OUTPUT_INVALID");
             }
             if (!validText(item.evidence(), MAX_EVIDENCE_CODE_POINTS)

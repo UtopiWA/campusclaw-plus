@@ -4,12 +4,12 @@
 
 **当前可用：** 登录与班级隔离、教学材料管理与检索、技能和智能体配置、持久化流式对话、MCP 工具调用与审计、文本作业异步批改。
 
-**扩展目标：** 知识图谱与掌握度画像、个性化学习计划、自适应练习、班级共性错误分析，以及诊断、规划和辅导角色的协作。相关业务尚未实现；团队基线已归档，Class08 异步批改已完成本机验收，待成员评审/归档。
+**扩展目标：** 知识图谱与掌握度画像、个性化学习计划、自适应练习、班级共性错误分析，以及诊断、规划和辅导角色的协作。相关业务尚未实现；团队基线已归档，Class08 异步批改已独立复核，依赖风险未获接受，保持活动 change。
 
 ## 文档
 
 - [项目范围与成员分工](docs/project-scope.md)：完整目标、现有缺口与分阶段交付。
-- [项目状态](docs/project-status.md)：当前实现与待办；[Class07 验收记录](docs/lesson-07/README.md)：实际检查结果。
+- [项目状态](docs/project-status.md)：当前实现与待办；验收记录：[Class07](docs/lesson-07/README.md)、[Class08](docs/lesson-08/README.md)；[Class08 评审](docs/lesson-08/review.md)。
 - [项目规则](AGENTS.md) 与 [主规格](openspec/specs/)：开发约束和已实现行为契约。
 - 工程规范：[产品](docs/standards/01-product.md)、[后端](docs/standards/02-backend.md)、[安全](docs/standards/03-security.md)、[测试与评审](docs/standards/04-testing.md)、[运维](docs/standards/05-operations.md)。
 - [接口回归说明](apitest/README.md)：测试环境、执行方式和报告。
@@ -57,6 +57,8 @@ docker compose start grading-worker  # 恢复后自动完成，无需重新提�
 
 RabbitMQ management 仅绑定本机：<http://127.0.0.1:15672>。三条核心判据、队列/死信观测和失败记录见 [Class08 验收记录](docs/lesson-08/README.md)。
 
+`.env.example` 列出的 `GRADING_*` 参数由 Compose 同步传入 Web/worker；worker 不运行材料恢复或 Qdrant 初始化。仅重建后端后若前端出现 502，执行 `docker compose restart frontend` 刷新 Nginx 上游解析。
+
 ## 检查与测试
 
 在仓库根目录执行，需要 Node.js 22+、Java 17、Python 3.11+ 和 OpenSpec CLI；容器检查另需 Docker Engine：
@@ -71,7 +73,7 @@ python scripts/scan.py
 
 默认 `unit` 检查规约、前端、非容器后端及 Python；`integration` 使用独立 MySQL/Qdrant 容器。`api` 需按 [接口说明](apitest/README.md) 准备运行中应用、账号和材料；`all` 顺序执行三组，失败即停止。`scan.py` 执行代码规范、依赖漏洞和静态检查，Java 依赖默认使用 OSV，OWASP 为可选补充。退出码：0 通过、1 检查失败、2 参数/环境缺失。原始输出在 `backend/target/check-logs/`，后端报告在 `backend/target/surefire-reports/`，接口报告在 `apitest/reports/`。
 
-Class08 异步批改的三条判据和故障验收使用 `python scripts/lesson08_acceptance.py`，需要运行中的 Web、worker 和 RabbitMQ；执行记录见 [Class08 验收记录](docs/lesson-08/README.md)。
+Class08 验收入口为 `python scripts/lesson08_acceptance.py basic`，支持 `pending/wait/duplicate/report`、`--env-file`、`--base-url` 和 `--management-url`；数据库端口读取 `MYSQL_HOST_PORT`。扫描另需 Ruff/pip-audit，建议安装在独立虚拟环境；告警、未执行项及风险处置见 [Class08 评审](docs/lesson-08/review.md)。
 
 ## 开发与安全
 
