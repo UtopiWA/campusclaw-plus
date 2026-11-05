@@ -1,9 +1,9 @@
 # Class08 异步作业批改验收记录
 
-状态：**依赖升级与独立团队 Docker 部署已完成技术验证，等待用户人工验收和另一成员复核；两个 change 保持活动，未同步归档、未提交，标签未授权。** 第 0～6 节为实现方记录，第 7 节为升级前独立复核，第 8 节为升级及部署结果，第 9 节为作业批阅与交互修正，第 10 节为最新 AI 综合评分，历史告警不覆盖最新复扫结论。
+状态：**功能已提交至 `45b2f7a`，用户初验通过。本轮安全工具/文档未提交；另一成员复现暂缓，待本轮工作完成后交付。两个 change 保持活动，未同步归档，标签未授权。** 第 0～11 节保留各轮实际记录，第 12 节为最新安全自查；历史告警不覆盖最新复扫结论，代理不代签成员。
 
 - 关联 change：[2026-11-03-add-async-assignment-grading](../../openspec/changes/2026-11-03-add-async-assignment-grading/proposal.md)
-- 能力规约：[assignment-grading](../../openspec/changes/2026-11-03-add-async-assignment-grading/specs/assignment-grading/spec.md)、[reliable-task-execution](../../openspec/changes/2026-11-03-add-async-assignment-grading/specs/reliable-task-execution/spec.md)
+- 能力规约：[assignment-grading](../../openspec/changes/2026-11-03-add-async-assignment-grading/specs/assignment-grading/spec.md)、[reliable-task-execution](../../openspec/changes/2026-11-03-add-async-assignment-grading/specs/reliable-task-execution/spec.md)、[security-precheck](../../openspec/changes/2026-11-03-add-async-assignment-grading/specs/security-precheck/spec.md)
 - 评审记录：[review.md](review.md)
 - 交接待办：[handoff.md](handoff.md)
 - 测试/评审规范：[04-testing.md](../standards/04-testing.md)
@@ -305,3 +305,22 @@ Docker Desktop 数据盘已核验在 D 盘，不迁移、不重启整个引擎�
 - 材料架构未改：上传请求同步保存文件与元数据，随后MaterialIngestionService用有界线程池异步解析/索引；数据库状态认领及启动/定时恢复保留。当前无需为统一形式迁到RabbitMQ；作业继续使用独立队列/worker。
 - 实跑前端lint、13文件82项测试和生产构建通过；只更新团队frontend。Edge检查教师/学生的讲义、登录、助手配置与作业页、上传弹窗及1440/1000/760/470/375宽度通过，旧作业不可见、health200。
 - 本轮无业务后端代码或依赖变更，未重跑后端/真实模型/全量扫描；沿用前两节对应版本证据。不代签另一成员，不提交或归档。
+
+## 12. 安全自查与文档补齐（2026-11-06）
+
+候选：功能提交 `45b2f7a` 加本轮工具和文档。用户初验已通过；另一成员复现按最新要求暂缓，待本轮完成后统一交付。本节为协作代理实测，不作为成员签署。
+
+| 本轮实际执行 | 结果 |
+| --- | --- |
+| `python scripts/security_precheck.py --env-file .env.team` | `72756d460899`：授权、停启/并发/重复消息及真实计算器会话执行完成，合成资源清理完成；SEC-07 缺技能 ID 和 Token 用量，退出 1 |
+| 同入口 `--checks access` | `7e596fa885e3`：加强数据库前后比较后，SEC-01～04 全通过、清理完成，退出 0 |
+| `python scripts/check_security.py --env-file .env.team` | 密钥四范围 Gitleaks 无命中；精确配置比对有 1 个公开服务名同文候选，核查说明保留，入口退出 1；默认依赖/静态扫描全部完成并通过，OSV 124/124 零告警 |
+| `python -m unittest discover -s scripts/tests`、Ruff | 33 项脚本测试及全脚本规范检查通过，覆盖脱敏、非零退出、缺范围、旧报告不能冒充本轮、清理保护与 access 模式边界 |
+| 两项 `CampusClawIntegrationTest` | 并发不同答案仅接受一次、outbox 失败整体回滚；独立 MySQL 容器，2 项通过，0 失败/错误/跳过；命令见[并发报告](../../reports/risk-concurrency.md) |
+| 临时七服务空库启动 | 复用当前镜像、全新独立网络/卷和随机合成凭据，迁移 V9、health 200、三个演示账号登录成功；临时项目与卷已清理，团队实例保留 |
+
+六份固定报告及三类问题草稿已写入 [reports](../../reports/security-precheck.md)，包括授权/并发/事务、密钥依赖和待交付的同伴复核。用户已决定搁置 SEC-07 的技能 ID 和 Token 用量，不列入本次同伴复核、修复任务或归档前置条件；原始红项保留。SEC-05 的原始候选数及退出码不改成零。
+
+本轮未重跑整个后端/前端套件、全部 API、DLQ/超时回收、OWASP 或选做 SEC-08，未同步主规格、归档、提交、推送或打标签。既有对应功能结果仍见第 8～11 节。最终成员复核与交付顺序见[交接](handoff.md)。
+
+交接文档整理：已检查当前可入库的 102 份文档（含归档和新增文件），私有配置凭据精确比对、敏感格式/本机路径检查及仓库内链接检查均未发现问题。Docker 不可用，文档密钥扫描改用经官方发布校验和核验的 Gitleaks v8.24.3 便携版，退出 0、零命中。此次仅调整文档和复核范围，没有重跑业务测试或依赖审计；原始输出留在忽略目录。

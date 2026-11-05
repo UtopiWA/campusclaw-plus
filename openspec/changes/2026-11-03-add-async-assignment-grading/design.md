@@ -189,3 +189,12 @@ RabbitMQ 拓扑：持久化 direct exchange `grading.events`；`grading.tasks` �
 ### 2026-11-05 初验后清理
 
 用户初步功能检验通过。仅定向删除旧演示作业“勾股定理练习”及关联记录；参考材料保留。去掉侧栏隔离宣传、检索范围徽标及登录的底层鉴权文案，保留身份和处理状态。材料仍由现有有界线程池异步执行、数据库认领和定时恢复，不为技术形式统一引入消息队列迁移。
+
+
+### 2026-11-06 安全自查与交付
+
+在同一change补齐security-precheck能力。scripts/security_precheck.py复用现有HTTP、数据库和队列验收工具，用独立命名的合成资源执行SEC-01～04、SEC-07及重复/事务判据；资源创建立即登记，最后按依赖清理，不改已有账号/配置。scripts/check_security.py使用固定版本Gitleaks，在无网络只读容器中扫描全部本地可达Git历史、公开工作区文件、frontend/dist和团队七服务现存日志；浅克隆、缺产物或日志失败均不得记通过。随后复用默认scan执行依赖及静态检查，输出只留脱敏元数据，不打印命中正文/凭据。
+
+六份报告位于reports/：security-precheck、risk-authz、risk-concurrency、risk-transaction、security-baseline、review-01。三类知识库问题草稿另放reports/retrieval-questions.md。自查发现的审计字段等基线缺口只记录真实红项和后续落点；若发现真密钥泄露须先处理，不为了全绿降低规则。另一成员复现按用户指令暂缓，review-01只写可执行待办，不填结论或署名。最终提交由另一成员验收后办理，本轮不提交、归档或打标签。
+
+用户已决定搁置技能 ID 和 Token 用量，不要求另一成员复现、修复或再确认，也不作为本次归档前置条件。原始 SEC-07 红项与脚本退出码保留；交接只要求 `--checks tasks`、`--checks access` 和页面功能/代码复核，不要求重跑包含 SEC-07 的全项入口。此范围决定不豁免越权、依赖漏洞或敏感信息泄露等实际问题。

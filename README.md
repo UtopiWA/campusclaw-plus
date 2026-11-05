@@ -13,6 +13,7 @@
 - [项目规则](AGENTS.md) 与 [主规格](openspec/specs/)：开发约束和已实现行为契约。
 - 工程规范：[产品](docs/standards/01-product.md)、[后端](docs/standards/02-backend.md)、[安全](docs/standards/03-security.md)、[测试与评审](docs/standards/04-testing.md)、[运维](docs/standards/05-operations.md)。
 - [接口回归说明](apitest/README.md)：测试环境、执行方式和报告。
+- [Class08 安全自查](reports/security-precheck.md)：授权、并发/事务、密钥与依赖结果；[同伴复核](reports/review-01.md)待本轮工作完成后交付另一成员。
 
 ## 技术栈
 
@@ -79,6 +80,8 @@ python scripts/scan.py
 默认 `unit` 检查规约、前端、非容器后端及 Python；`integration` 使用独立 MySQL/Qdrant 容器。`api` 需按 [接口说明](apitest/README.md) 准备运行中应用、账号和材料；`all` 顺序执行三组，失败即停止。`scan.py` 执行代码规范、依赖漏洞和静态检查，Java 依赖默认使用 OSV，OWASP 为可选补充。退出码：0 通过、1 检查失败、2 参数/环境缺失。原始输出在 `backend/target/check-logs/`，后端报告在 `backend/target/surefire-reports/`，接口报告在 `apitest/reports/`。
 
 Class08 验收入口为 `python scripts/lesson08_acceptance.py basic --env-file .env.team`，支持 `pending/wait/duplicate/report`；默认从所选文件读取网页、数据库和 RabbitMQ 管理端口，地址也可用 `--base-url/--management-url` 覆盖。扫描另需 Ruff/pip-audit，建议安装在独立虚拟环境；实际结果与未执行项见 [Class08 评审](docs/lesson-08/review.md)。
+
+安全自查入口为 `python scripts/security_precheck.py --env-file .env.team`，可用 `--checks access` 只检查授权；全项会暂时停启本团队 worker 并调用模型，应在无人工提交时执行。密钥与依赖合并入口为 `python scripts/check_security.py --env-file .env.team`，需先构建前端、准备 Gitleaks 镜像，范围及退出码见[扫描说明](reports/security-baseline.md)。SEC-07 的两项审计缺口暂缓处理，原始记录保留，不属于本次同伴复核任务。
 
 ## 开发与安全
 
