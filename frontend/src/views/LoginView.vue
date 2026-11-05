@@ -1,4 +1,5 @@
 <script setup>
+import { feedbackRef } from '../services/feedback.js'
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppIcon from '../components/AppIcon.vue'
@@ -6,7 +7,7 @@ import { login } from '../services/auth.js'
 
 const username = ref('')
 const password = ref('')
-const error = ref('')
+const error = feedbackRef('error')
 const busy = ref(false)
 const route = useRoute()
 const router = useRouter()
@@ -35,31 +36,28 @@ async function submit() {
         <div><strong>CampusClaw</strong><span>智能教学平台</span></div>
       </div>
       <div class="login-hero">
-        <p class="login-kicker">班级知识 · 教研协同</p>
-        <h1>让每一份教学经验<br />都成为可复用的知识</h1>
-        <p>以班级为安全边界，沉淀教学材料，连接教师与学生的学习过程。</p>
+        <h1>课程资料、助手对话<br />与作业批改</h1>
+        <p>整理课程讲义、使用教学助手，查看作业与学习反馈。</p>
         <ul>
-          <li><span><AppIcon name="shield" /></span><div><strong>班级数据隔离</strong><small>服务端保障每个班级的数据边界</small></div></li>
-          <li><span><AppIcon name="layers" /></span><div><strong>材料知识沉淀</strong><small>讲义上传后自动解析进入班级知识库</small></div></li>
-          <li><span><AppIcon name="bot" /></span><div><strong>智能能力扩展</strong><small>为后续学科助手与教学闭环提供基础</small></div></li>
+          <li><span><AppIcon name="book" /></span><div><strong>讲义与检索</strong><small>上传讲义，查找课程内容</small></div></li>
+          <li><span><AppIcon name="bot" /></span><div><strong>助手对话</strong><small>围绕课程提问，获取讲解</small></div></li>
+          <li><span><AppIcon name="homework" /></span><div><strong>作业批改</strong><small>提交作答，查看评分与教师评语</small></div></li>
         </ul>
       </div>
-      <p class="login-panel-footer">CampusClaw · 面向中小学的教研智能体平台</p>
+      <p class="login-panel-footer">CampusClaw · 教学空间</p>
     </section>
 
     <section class="login-form-panel">
       <div class="login-form-wrap">
         <div class="mobile-login-brand"><span class="brand-symbol" aria-hidden="true"><i></i><i></i><i></i><i></i></span><strong>CampusClaw</strong></div>
-        <p class="eyebrow">WELCOME BACK</p>
         <h2>登录教学空间</h2>
-        <p class="login-intro">使用课程提供的教师或学生账号继续。</p>
+        <p class="login-intro">使用教师或学生账号登录。</p>
         <form class="login-form" @submit.prevent="submit">
           <label><span>账号</span><span class="input-with-icon"><AppIcon name="user" /><input v-model="username" name="username" autocomplete="username" placeholder="请输入账号" required /></span></label>
           <label><span>密码</span><span class="input-with-icon"><AppIcon name="lock" /><input v-model="password" name="password" type="password" autocomplete="current-password" placeholder="请输入密码" required /></span></label>
-          <p v-if="error" class="feedback feedback--error" role="alert">{{ error }}</p>
+
           <button class="button button--primary login-submit" type="submit" :disabled="busy">{{ busy ? '正在验证…' : '登录' }}</button>
         </form>
-        <div class="login-security"><AppIcon name="lock" /><span>Bearer 令牌与班级权限由服务端安全校验</span></div>
       </div>
     </section>
   </main>

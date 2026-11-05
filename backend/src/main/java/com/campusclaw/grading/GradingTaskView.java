@@ -16,5 +16,7 @@ public record GradingTaskView(
         Instant finishedAt,
         String lastFailureCode,
         String failureCode,
-        GradingResultView result) {
+        GradingResultView result,
+        String submissionContent,
+        TeacherReviewView teacherReview) {
 }

@@ -1,4 +1,5 @@
 <script setup>
+import { feedbackRef, showFeedback } from '../services/feedback.js'
 import { computed, nextTick, ref } from 'vue'
 import AppIcon from '../components/AppIcon.vue'
 import AppShell from '../components/AppShell.vue'
@@ -9,7 +10,7 @@ const query = ref('')
 const mode = ref('hybrid')
 const interaction = ref('ask')
 const busy = ref(false)
-const validationError = ref('')
+const validationError = feedbackRef('error')
 const messages = ref([])
 const thread = ref(null)
 let messageId = 0
@@ -80,6 +81,7 @@ async function runRequest(userMessage) {
   } catch (exception) {
     userMessage.status = 'error'
     userMessage.error = dependencyMessage(exception)
+    showFeedback(userMessage.error)
   } finally {
     busy.value = false
     await scrollToLatest()
@@ -242,7 +244,7 @@ function score(value) {
       </main>
 
       <footer class="chat-composer-wrap">
-        <p v-if="validationError" class="feedback feedback--error chat-error" role="alert">{{ validationError }}</p>
+
         <form class="chat-composer" @submit.prevent="submit">
           <div class="chat-input-row">
             <textarea v-model="query" maxlength="1000" rows="2" :placeholder="interaction === 'ask' ? '向班级知识库提问…' : '输入要检索的关键词或问题…'" aria-label="问题或检索词" @keydown.enter.exact.prevent="submit" />

@@ -93,11 +93,6 @@ h1, h2, h3, p { margin-top: 0; }
 .nav-item--disabled { color: #8f949d; cursor: default; }
 .nav-item--disabled:hover { color: #8f949d; background: transparent; }
 .coming-soon { margin-left: auto; padding: 2px 5px; color: #a3a7ae; background: #f2f3f5; border-radius: 4px; font-size: 9px; font-weight: 600; }
-.sidebar-scope { display: flex; gap: 10px; padding: 13px 11px; color: #7f5a25; background: #fbf6ec; border: 1px solid #f1e5ce; border-radius: 10px; }
-.sidebar-scope .app-icon { margin-top: 2px; }
-.sidebar-scope div { display: grid; gap: 3px; }
-.sidebar-scope strong { color: #6f4d1e; font-size: 12px; }
-.sidebar-scope span { color: #967447; font-size: 10px; }
 .app-body { min-height: 100vh; margin-left: var(--sidebar-width); }
 .app-topbar { position: sticky; top: 0; z-index: 15; display: flex; height: var(--topbar-height); align-items: center; justify-content: space-between; padding: 0 28px; background: rgba(255,255,255,0.97); border-bottom: 1px solid var(--line); backdrop-filter: blur(10px); }
 .mobile-brand { display: none; align-items: center; gap: 9px; }
@@ -120,12 +115,11 @@ h1, h2, h3, p { margin-top: 0; }
 .breadcrumb span { margin: 0 5px; color: #c0c3c9; }
 .page-heading h1 { margin-bottom: 8px; color: var(--ink-900); font-size: clamp(25px, 3vw, 31px); letter-spacing: -0.035em; }
 .page-heading > div > p:last-child { margin-bottom: 0; color: var(--ink-500); font-size: 14px; }
-.summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 20px; }
+.summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; margin-bottom: 20px; }
 .summary-card { display: flex; min-height: 94px; align-items: center; gap: 15px; padding: 19px 21px; background: #fff; border: 1px solid var(--line); border-radius: var(--radius-md); box-shadow: 0 1px 2px rgba(23, 28, 35, .02); }
 .summary-icon { display: grid; width: 46px; height: 46px; place-items: center; border-radius: 11px; }
 .summary-icon--red { color: var(--brand-700); background: var(--brand-100); }
 .summary-icon--gold { color: #9a6810; background: #fbf1dc; }
-.summary-icon--blue { color: #2d668d; background: #e7f1f8; }
 .summary-card > div { display: grid; gap: 3px; }
 .summary-card strong { color: #292c32; font-size: 23px; line-height: 1; }
 .summary-card span { color: #858b94; font-size: 12px; }
@@ -169,7 +163,6 @@ h1, h2, h3, p { margin-top: 0; }
 .lecture-search-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 15px; }
 .lecture-search-heading h2 { margin-bottom: 4px; color: #2b2e34; font-size: 17px; }
 .lecture-search-heading p { color: #8c929b; font-size: 11px; }
-.class-scope-tag { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 5px; padding: 6px 9px; color: #2d668d; background: #e7f1f8; border-radius: 7px; font-size: 10px; font-weight: 700; }
 .lecture-search-form { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 9px; }
 .lecture-search-input { display: flex; min-width: 0; height: 42px; align-items: center; gap: 9px; padding: 0 12px; color: #969ba3; background: #fafbfc; border: 1px solid #dfe2e6; border-radius: 9px; }
 .lecture-search-input:focus-within { color: var(--brand-700); background: #fff; border-color: #c98385; box-shadow: 0 0 0 3px rgba(148,7,10,.07); }
@@ -329,9 +322,8 @@ h1, h2, h3, p { margin-top: 0; }
 .login-brand strong { font-size: 18px; }
 .login-brand span { color: rgba(255,255,255,.65); font-size: 10px; letter-spacing: .12em; }
 .login-hero { position: relative; z-index: 1; width: min(540px, 100%); margin: auto 0; padding: 55px 0; }
-.login-kicker { margin-bottom: 16px; color: #f2c9ca; font-size: 12px; font-weight: 700; letter-spacing: .18em; }
 .login-hero h1 { margin-bottom: 20px; font-size: clamp(30px, 3.4vw, 48px); line-height: 1.32; letter-spacing: -.045em; }
-.login-hero > p:not(.login-kicker) { width: min(470px, 100%); margin-bottom: 40px; color: rgba(255,255,255,.72); font-size: 14px; line-height: 1.8; }
+.login-hero > p { width: min(470px, 100%); margin-bottom: 40px; color: rgba(255,255,255,.72); font-size: 14px; line-height: 1.8; }
 .login-hero ul { display: grid; gap: 22px; margin: 0; padding: 0; list-style: none; }
 .login-hero li { display: flex; align-items: center; gap: 14px; }
 .login-hero li > span { display: grid; width: 42px; height: 42px; flex: none; place-items: center; color: #fff; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.15); border-radius: 10px; }
@@ -352,7 +344,6 @@ h1, h2, h3, p { margin-top: 0; }
 .input-with-icon input { width: 100%; height: 100%; padding: 0; color: #30343a; background: transparent; border: 0; outline: 0; font-size: 13px; }
 .login-submit { width: 100%; min-height: 45px; margin-top: 4px; }
 .login-form .feedback { margin: -3px 0 0; }
-.login-security { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 24px; color: #a0a4ac; font-size: 10px; }
 
 @keyframes fade-in { from { opacity: 0; } }
 @keyframes modal-in { from { opacity: 0; transform: translateY(8px) scale(.985); } }
@@ -361,9 +352,8 @@ h1, h2, h3, p { margin-top: 0; }
   :root { --sidebar-width: 76px; }
   .sidebar { padding-inline: 10px; }
   .sidebar-brand { justify-content: center; padding-inline: 0; }
-  .brand-copy, .nav-section-label, .nav-item-label, .coming-soon, .sidebar-scope div { display: none; }
+  .brand-copy, .nav-section-label, .nav-item-label, .coming-soon { display: none; }
   .nav-item { justify-content: center; padding-inline: 0; }
-  .sidebar-scope { justify-content: center; padding: 12px 0; }
   .app-topbar { padding-inline: 22px; }
   .login-layout { grid-template-columns: minmax(360px, 43%) 1fr; }
   .login-brand-panel { padding-inline: 38px; }
@@ -385,7 +375,6 @@ h1, h2, h3, p { margin-top: 0; }
   .summary-grid { grid-template-columns: 1fr; }
   .summary-card { min-height: 78px; padding-block: 14px; }
   .lecture-search-heading { align-items: stretch; flex-direction: column; }
-  .class-scope-tag { width: max-content; }
   .lecture-search-form { grid-template-columns: 1fr; }
   .lecture-search-mode select, .lecture-search-form > .button { width: 100%; }
   .content-card-header { align-items: stretch; flex-direction: column; }

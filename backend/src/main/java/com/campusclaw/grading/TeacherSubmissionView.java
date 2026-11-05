@@ -13,5 +13,7 @@ public record TeacherSubmissionView(
         String status,
         Integer score,
         Integer maxScore,
-        String failureCode) {
+        String failureCode,
+        GradingResultView aiResult,
+        TeacherReviewView teacherReview) {
 }

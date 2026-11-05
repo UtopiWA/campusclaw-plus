@@ -1,4 +1,5 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { mountWithFeedback as mount } from '../../test-support/mountWithFeedback.js'
+import {flushPromises} from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { state, authState } = vi.hoisted(() => ({

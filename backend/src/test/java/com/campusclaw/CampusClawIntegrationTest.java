@@ -125,6 +125,8 @@ class CampusClawIntegrationTest {
     }
 
     @Autowired MockMvc mockMvc;
+    @Autowired com.campusclaw.grading.GradingModelService gradingModel;
+    @Autowired com.campusclaw.persistence.SubmissionRepository gradingSubmissionRepository;
     @Autowired UserAccountRepository users;
     @Autowired MaterialRepository materials;
     @Autowired AssistantRepository assistants;
@@ -148,6 +150,7 @@ class CampusClawIntegrationTest {
     @MockitoBean com.campusclaw.health.QdrantHealthProbe qdrantHealth;
     @Autowired com.campusclaw.grading.AssignmentService gradingAssignments;
     @Autowired com.campusclaw.grading.SubmissionService gradingSubmissions;
+    @Autowired com.campusclaw.grading.GradingTaskCompletionService gradingCompletion;
     @MockitoSpyBean com.campusclaw.persistence.GradingOutboxRepository gradingOutbox;
 
     @BeforeEach
@@ -998,7 +1001,7 @@ class CampusClawIntegrationTest {
     }
 
     @Test
-    void gradingConcurrentDifferentAnswersReceiveSequentialVersions() throws Exception {
+    void gradingConcurrentDifferentAnswersOnlyAllowOneSubmission() throws Exception {
         var teacher = users.findByUsername("teacher-a").orElseThrow();
         var student = users.findByUsername("student-a1").orElseThrow();
         var assignment = gradingAssignments.create(new com.campusclaw.grading.CreateAssignmentRequest(
@@ -1007,15 +1010,22 @@ class CampusClawIntegrationTest {
         var start = new java.util.concurrent.CountDownLatch(1);
         var first = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
             awaitLatch(start);
-            return gradingSubmissions.submit(assignment.id(), "answer one", null, student);
+            try { gradingSubmissions.submit(assignment.id(), "answer one", null, student); return true; }
+            catch (com.campusclaw.common.ConflictException exception) { return false; }
         });
         var second = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
             awaitLatch(start);
-            return gradingSubmissions.submit(assignment.id(), "answer two", null, student);
+            try { gradingSubmissions.submit(assignment.id(), "answer two", null, student); return true; }
+            catch (com.campusclaw.common.ConflictException exception) { return false; }
         });
         start.countDown();
-        assertThat(java.util.Set.of(first.get(15, java.util.concurrent.TimeUnit.SECONDS).version(),
-                second.get(15, java.util.concurrent.TimeUnit.SECONDS).version())).containsExactlyInAnyOrder(1, 2);
+        assertThat(java.util.List.of(first.get(15, java.util.concurrent.TimeUnit.SECONDS),
+                second.get(15, java.util.concurrent.TimeUnit.SECONDS))).containsExactlyInAnyOrder(true, false);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM submissions WHERE assignment_id=?",
+                Integer.class, assignment.id())).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM grading_tasks WHERE assignment_id=?",
+                Integer.class, assignment.id())).isEqualTo(1);
+        verifyNoInteractions(chat);
     }
 
     @Test
@@ -1032,6 +1042,109 @@ class CampusClawIntegrationTest {
                 Integer.class, assignment.id())).isZero();
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM grading_tasks WHERE assignment_id=?",
                 Integer.class, assignment.id())).isZero();
+    }
+
+    @Test
+    void teacherFinalReviewSurvivesLaterAiCompletionAndRejectsUnauthorizedWrites() throws Exception {
+        var teacher = users.findByUsername("teacher-a").orElseThrow();
+        var student = users.findByUsername("student-a1").orElseThrow();
+        var assignment = gradingAssignments.create(new com.campusclaw.grading.CreateAssignmentRequest(
+                "Teacher final review", "Explain a rule",
+                java.util.List.of(new com.campusclaw.grading.RubricCriterion("c1", "Correct", 100))), teacher);
+        var accepted = gradingSubmissions.submit(assignment.id(), "synthetic original answer", null, student);
+        String teacherToken = login("teacher-a");
+        String studentToken = login("student-a1");
+        mockMvc.perform(get("/api/assignments").with(bearer(studentToken))).andExpect(status().isOk());
+        mockMvc.perform(get("/api/assignments/" + assignment.id()).with(bearer(studentToken)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.myLatest.score").doesNotExist());
+        mockMvc.perform(get("/api/assignments/" + assignment.id() + "/submissions").with(bearer(teacherToken)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0].score").doesNotExist());
+        String path = "/api/assignments/" + assignment.id() + "/submissions/" + accepted.submissionId() + "/review";
+        mockMvc.perform(put(path).with(bearer(studentToken)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"score\":88,\"comment\":\"Teacher comment\"}"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(put(path).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"score\":88,\"comment\":\"Teacher comment\"}"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(put(path).with(bearer(teacherToken)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"score\":101,\"comment\":\"Over limit\"}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(put(path).with(bearer(teacherToken)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"score\":88,\"comment\":\"Teacher comment\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.score").value(88));
+        jdbc.update("UPDATE grading_tasks SET status='RUNNING',attempts=1 WHERE task_id=?", accepted.taskId());
+        var outcome = new com.campusclaw.grading.GradingOutcome(60, 100, "[]", "AI original comment", "test", "test");
+        assertThat(gradingCompletion.complete(accepted.taskId(), 1, accepted.submissionId(), 1, outcome)).isTrue();
+        mockMvc.perform(get("/api/grading/tasks/" + accepted.taskId()).with(bearer(studentToken)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.score").value(60))
+                .andExpect(jsonPath("$.teacherReview.score").value(88))
+                .andExpect(jsonPath("$.submissionContent").value("synthetic original answer"));
+        mockMvc.perform(put(path).with(bearer(teacherToken)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"score\":90,\"comment\":\"Updated final comment\"}"))
+                .andExpect(status().isOk());
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM submission_reviews WHERE submission_id=?",
+                Integer.class, accepted.submissionId())).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT score FROM grading_results WHERE task_id=?",
+                Integer.class, accepted.taskId())).isEqualTo(60);
+        mockMvc.perform(get("/api/assignments/" + assignment.id()).with(bearer(studentToken)))
+                .andExpect(jsonPath("$.myLatest.score").value(90))
+                .andExpect(jsonPath("$.myLatest.teacherReview.comment").value("Updated final comment"));
+        var otherClass = users.findByUsername("student-b1").orElseThrow().getClassId();
+        var otherTeacher = users.saveAndFlush(new com.campusclaw.persistence.UserAccount(
+                "review-other-teacher", passwordEncoder.encode(DEMO_PASSWORD),
+                com.campusclaw.persistence.Role.TEACHER, otherClass));
+        mockMvc.perform(put(path).with(bearer(login(otherTeacher.getUsername()))).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"score\":10,\"comment\":\"Cross class\"}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void answerOnlyCreationSkipsModelAndGradingSavesModelScoreOutsideTransaction() throws Exception {
+        String teacher = login("teacher-a");
+        var upload = mockMvc.perform(multipart("/api/materials/upload")
+                        .file(new MockMultipartFile("file", "answer.md", "text/markdown",
+                                "A right triangle satisfies a²+b²=c², with c as the hypotenuse.".getBytes(StandardCharsets.UTF_8)))
+                        .with(bearer(teacher))).andExpect(status().isCreated()).andReturn();
+        long materialId = objectMapper.readTree(upload.getResponse().getContentAsString()).get("materialId").asLong();
+        awaitMaterialStatus(materialId, "READY");
+        byte[] body = objectMapper.writeValueAsBytes(Map.of("title", "Reference based assignment", "prompt", "Explain theorem",
+                "maxScore", 100, "rubricMaterialIds", java.util.List.of(materialId)));
+        var created = mockMvc.perform(post("/api/assignments").with(bearer(teacher)).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.maxScore").value(100))
+                .andExpect(jsonPath("$.criteria").isEmpty())
+                .andExpect(jsonPath("$.rubricSources[0].id").value(materialId)).andReturn();
+        verifyNoInteractions(chat);
+        long assignmentId = objectMapper.readTree(created.getResponse().getContentAsString()).path("id").asLong();
+        jdbc.update("UPDATE knowledge_entries SET body_text='changed later' WHERE material_id=?", materialId);
+        assertThat(jdbc.queryForObject("SELECT rubric_text FROM assignments WHERE id=?", String.class, assignmentId))
+                .contains("right triangle").doesNotContain("changed later");
+        when(chat.complete(any())).thenAnswer(invocation -> {
+            assertThat(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            return "{\"score\":87,\"rationale\":\"公式正确，但尚未说明适用条件及推理过程。\"}";
+        });
+        var student = users.findByUsername("student-a1").orElseThrow();
+        var accepted = gradingSubmissions.submit(assignmentId, "a²+b²=c²", null, student);
+        jdbc.update("UPDATE grading_tasks SET status='RUNNING',attempts=1 WHERE task_id=?", accepted.taskId());
+        var assignment = gradingAssignments.requireForTeacher(assignmentId, users.findByUsername("teacher-a").orElseThrow());
+        var submitted = gradingSubmissionRepository.findById(accepted.submissionId()).orElseThrow();
+        var outcome = gradingModel.grade(assignment, submitted);
+        assertThat(outcome.score()).isEqualTo(87);
+        gradingCompletion.complete(accepted.taskId(), 1, accepted.submissionId(), 1, outcome);
+        mockMvc.perform(get("/api/grading/tasks/" + accepted.taskId()).with(bearer(login("student-a1"))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.score").value(87))
+                .andExpect(jsonPath("$.result.criteria").isEmpty());
+        int before = jdbc.queryForObject("SELECT COUNT(*) FROM assignments", Integer.class);
+        mockMvc.perform(post("/api/assignments").with(bearer(teacher)).contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(Map.of("title", "Invalid", "prompt", "Rule", "maxScore", 0,
+                                "rubricMaterialIds", java.util.List.of(materialId)))))
+                .andExpect(status().isBadRequest());
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM assignments", Integer.class)).isEqualTo(before);
+        var b = users.findByUsername("student-b1").orElseThrow();
+        var bMaterial = materials.findAllByClassIdOrderByCreatedAtDesc(b.getClassId()).get(0);
+        mockMvc.perform(post("/api/assignments").with(bearer(teacher)).contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(Map.of("title", "Cross", "prompt", "Rule", "maxScore",100,
+                                "rubricMaterialIds", java.util.List.of(bMaterial.getId())))))
+                .andExpect(status().isNotFound());
     }
 
     private static void awaitLatch(java.util.concurrent.CountDownLatch latch) {

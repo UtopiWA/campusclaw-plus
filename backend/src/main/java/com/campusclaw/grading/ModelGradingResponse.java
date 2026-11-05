@@ -1,8 +1,5 @@
 package com.campusclaw.grading;
 
-import java.util.List;
-
-public record ModelGradingResponse(List<ModelCriterion> criteria, String overallRationale) {
-    public record ModelCriterion(String key, String verdict, String evidence, String explanation) {
-    }
+/** 仅接收模型直接给出的分数和有依据的评语。 */
+public record ModelGradingResponse(Integer score, String rationale) {
 }

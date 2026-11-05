@@ -1,6 +1,7 @@
 package com.campusclaw.grading;
 
 import com.campusclaw.common.BadRequestException;
+import com.campusclaw.common.ConflictException;
 import com.campusclaw.common.NotFoundException;
 import com.campusclaw.config.GradingProperties;
 import com.campusclaw.persistence.Assignment;
@@ -69,7 +70,11 @@ public class SubmissionService {
                 assignment.getId(), user.getId(), hash);
         if (byContent.isPresent()) return response(byContent.get());
 
-        int version = submissions.findMaxVersion(assignment.getId(), user.getId()) + 1;
+        if (submissions.findFirstByAssignmentIdAndStudentIdOrderByVersionDesc(
+                assignment.getId(), user.getId()).isPresent()) {
+            throw new ConflictException("该作业已提交，不能再次修改作答");
+        }
+        int version = 1;
         Submission submission = submissions.saveAndFlush(new Submission(
                 assignment.getId(), user.getClassId(), user.getId(), normalized, hash, key, version));
         String taskId = UUID.randomUUID().toString();

@@ -1,6 +1,6 @@
 # 当前项目状态
 
-最后核对：2026-11-04。本文件区分已验收的 CampusClaw 继承能力与 CampusClaw-Plus 团队启动工作；完整目标和分工见 [项目范围](project-scope.md)。
+最后核对：2026-11-05。本文件区分已验收的 CampusClaw 继承能力与 CampusClaw-Plus 团队启动工作；完整目标和分工见 [项目范围](project-scope.md)。
 
 ## 团队启动状态
 
@@ -15,14 +15,14 @@
 | 五类工程规范与工具读取规则 | `docs/standards/01-product.md`～`05-operations.md` 已成文；AGENTS 按范围加载，已新增团队检查技能；由另一成员审核规则与文档 |
 | 团队基线 change | 15/15 项完成；另一成员完成功能复现、审核并归档 |
 | 收尾流程 | 已完成：另一成员原生进程复现、审核、同步规格并归档；Compose/Testcontainers 沿用发起方结果 |
-| Class08 异步作业批改 | 已在升级后的独立团队 Docker 实例验证；待用户人工验收及另一成员复核，尚未归档 |
+| Class08 异步作业批改 | 参考答案支持的 AI 综合评分、一次提交、教师终评及新版页面已在独立团队 Docker 验证；用户初步功能检验通过，待另一成员复核与归档 |
 | 诊断、计划、推荐与班级分析 | 规划中，未实现 |
 
 按最新决定，不再追加无历史会话、规范破坏试验、回滚和全历史/镜像扫描。已取消项未记为通过；审核结论沿用[课程验收记录](lesson-07/README.md)，不新增台账。
 
 当前活动 change：
 
-- [异步作业批改](../openspec/changes/2026-11-03-add-async-assignment-grading/proposal.md)：功能、故障、权限及页面已实跑；成员规则/交叉评审和归档仍待完成。
+- [异步作业批改](../openspec/changes/2026-11-03-add-async-assignment-grading/proposal.md)：功能、故障和权限已实跑；新增参考答案综合评分、单次提交、教师终评与全站顶部反馈已实现；创建不调用模型、不提取固定评分项，旧成绩保持不变。评分验收见 [第 10 节](lesson-08/README.md#10-参考答案支持的-ai-综合评分2026-11-05)，初验后清理见 [第 11 节](lesson-08/README.md#11-初验后的文案与演示清理2026-11-05)，第9节保留历史。指定合成 MCP 与过量测试作业已清理；用户指定的旧“勾股定理练习”也已删除，参考材料保留；成员交叉评审和归档仍待完成。
 - [依赖升级与团队部署](../openspec/changes/2026-11-04-upgrade-spring-security-baseline/proposal.md)：Boot 4/Jackson 3 迁移及 `campusclaw-plus` 七服务已完成；OSV 124/124、npm/pip 审计零告警，默认 scan 全部通过。网页 18080、MySQL 13306、RabbitMQ 管理 15673，原项目容器/数据未变。技术结果见[本轮验收](lesson-08/README.md#8-依赖升级与独立团队-docker-部署2026-11-04)，另一成员应以此 Docker 配置复现。
 
 本轮未执行提交、推送、规格同步、归档或标签；不将代理技术验证当作成员签署。此前风险接受方案未获批准，相关告警现已通过实际升级整改，无需把历史拒绝改写成接受。
@@ -31,7 +31,7 @@
 
 已实现 Bearer JWT、教师/学生角色与服务端班级隔离、材料管理与异步索引、keyword/vector/hybrid 检索、问答采信、技能与智能体配置、私人持久化流式会话、MCP 管理/调用/审计、OpenAPI、Python 接口回归工具，以及 Class08 的文本作业异步批改（RabbitMQ、事务性发件箱、独立 worker、结果查询）。
 
-前端使用 `/materials`、教师 `/assistants`、`/conversations` 和 `/assignments`，旧 `/search` 重定向到材料页。作业已支持文本作答、异步批改和结果查询（Class08，待评审归档）；发布、教师复核、错题、学习诊断与计划等业务尚未形成完整链路。MCP 调用审计已可用，不等于全站审计与学情统计已完成。
+前端使用 `/materials`、教师 `/assistants`、`/conversations` 和 `/assignments`，旧 `/search` 重定向到材料页。作业已支持文件依据发布、单次文本作答、异步批改及教师终评（Class08，待评审归档）；错题、学习诊断与计划等业务尚未形成完整链路。MCP 调用审计已可用，不等于全站审计与学情统计已完成。
 
 ## 归档与验收状态
 

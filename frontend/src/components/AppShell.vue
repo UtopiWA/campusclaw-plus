@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { authState, logout } from '../services/auth.js'
+import { showFeedback } from '../services/feedback.js'
 import AppIcon from './AppIcon.vue'
 
 const props = defineProps({
@@ -31,8 +32,9 @@ const navItems = computed(() => isTeacher.value
     ])
 
 async function signOut() {
-  await logout()
-  await router.replace('/login')
+  try { await logout() }
+  catch (exception) { showFeedback(exception.message || '退出请求失败，请稍后重试') }
+  finally { await router.replace('/login') }
 }
 </script>
 
@@ -62,8 +64,8 @@ async function signOut() {
           <span
             v-else
             class="nav-item nav-item--disabled"
-            :aria-label="`${item.label}，待后续课程建设`"
-            :title="`${item.label} · 待后续课程建设`"
+            :aria-label="`${item.label}，暂未开放`"
+            :title="`${item.label} · 暂未开放`"
           >
             <AppIcon :name="item.icon" />
             <span class="nav-item-label">{{ item.label }}</span>
@@ -72,10 +74,6 @@ async function signOut() {
         </template>
       </nav>
 
-      <div class="sidebar-scope">
-        <AppIcon name="shield" />
-        <div><strong>班级数据隔离</strong><span>仅访问当前班级数据</span></div>
-      </div>
     </aside>
 
     <div class="app-body">

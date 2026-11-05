@@ -1,4 +1,5 @@
 <script setup>
+import { feedbackRef } from '../services/feedback.js'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppIcon from '../components/AppIcon.vue'
@@ -21,12 +22,12 @@ const selectedAssistantId = ref('')
 const question = ref('')
 const busy = ref(false)
 const loading = ref(true)
-const error = ref('')
+const error = feedbackRef('error')
 const thread = ref(null)
 const drawerOpen = ref(false)
 const listCollapsed = ref(false)
 const conversationDeleteTarget = ref(null)
-const conversationDeleteError = ref('')
+const conversationDeleteError = feedbackRef('error')
 const deletingConversation = ref(false)
 const expandedCitations = ref(new Set())
 
@@ -202,11 +203,14 @@ async function send(content = question.value) {
       // 完成事件只在数据库提交后发送，随后从服务端恢复权威消息与标题。
       current.value = await getConversation(current.value.id)
       await loadSidebar()
+    } else if (assistantMessage.error) {
+      error.value = assistantMessage.error
     }
   } catch (exception) {
     await renderer.drain()
     assistantMessage.status = 'FAILED'
     assistantMessage.error = exception.message
+    error.value = exception.message
   } finally {
     busy.value = false
     await scrollLatest()
@@ -314,7 +318,7 @@ onMounted(initialize)
           <button class="icon-button conversation-menu" type="button" aria-label="切换会话列表" @click="toggleConversationList"><span aria-hidden="true">☰</span></button>
           <div><strong>{{ current?.assistantName || '新对话' }}</strong><span>{{ current ? current.title : '选择一个智能体开始' }}</span></div>
         </header>
-        <p v-if="error" class="feedback feedback--error conversation-error" role="alert">{{ error }}</p>
+
 
         <main ref="thread" class="conversation-thread" aria-live="polite">
           <div v-if="loading" class="conversation-empty"><p>正在加载会话…</p></div>
@@ -371,7 +375,7 @@ onMounted(initialize)
 
     <BaseModal v-if="conversationDeleteTarget" title="删除会话" description="该会话的所有消息将一并删除。" @close="!deletingConversation && (conversationDeleteTarget = null)">
       <div class="delete-warning"><span><AppIcon name="trash" /></span><p>确定删除“{{ conversationDeleteTarget.title }}”吗？此操作无法撤销。</p></div>
-      <p v-if="conversationDeleteError" class="feedback feedback--error" role="alert">{{ conversationDeleteError }}</p>
+
       <template #footer><button class="button button--secondary" type="button" :disabled="deletingConversation" @click="conversationDeleteTarget = null">取消</button><button class="button button--danger" type="button" :disabled="deletingConversation" @click="confirmConversationDelete">{{ deletingConversation ? '删除中…' : '确认删除' }}</button></template>
     </BaseModal>
   </AppShell>

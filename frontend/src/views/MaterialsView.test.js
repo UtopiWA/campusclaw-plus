@@ -1,4 +1,5 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { mountWithFeedback as mount } from '../../test-support/mountWithFeedback.js'
+import {flushPromises} from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { apiRequest, authState, routeState } = vi.hoisted(() => ({
@@ -15,6 +16,7 @@ vi.mock('vue-router', () => ({
 }))
 
 import MaterialsView from './MaterialsView.vue'
+import { clearFeedback, feedbackMessages } from '../services/feedback.js'
 
 // jsdom 不允许直接写入文件输入框的 value，因此按浏览器事件形态注入只读 files 列表。
 async function selectFile(wrapper, file) {
@@ -25,6 +27,7 @@ async function selectFile(wrapper, file) {
 
 describe('MaterialsView', () => {
   beforeEach(() => {
+    clearFeedback()
     apiRequest.mockReset()
     apiRequest.mockResolvedValue([])
     routeState.query = {}
@@ -63,7 +66,7 @@ describe('MaterialsView', () => {
     })
   })
 
-  it('shows upload errors inside the open modal and clears them after choosing another file', async () => {
+  it('shows upload errors as top messages and preserves the file input', async () => {
     authState.user = { username: 'teacher-a', role: 'teacher', className: '班级 A' }
     apiRequest
       .mockResolvedValueOnce([])
@@ -77,7 +80,8 @@ describe('MaterialsView', () => {
     await flushPromises()
 
     expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
-    expect(wrapper.find('.upload-error[role="alert"]').text()).toBe('Only .txt and .md files are supported')
+    expect(feedbackMessages.value.at(-1).message).toBe('Only .txt and .md files are supported')
+    expect(wrapper.find('.upload-error').exists()).toBe(false)
     expect(wrapper.find('.file-drop').text()).toContain('bad.pdf')
 
     await selectFile(wrapper, new File(['valid'], 'valid.md', { type: 'text/markdown' }))
@@ -98,7 +102,7 @@ describe('MaterialsView', () => {
     await wrapper.find('.modal-footer .button--primary').trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('.upload-error').exists()).toBe(true)
+    expect(feedbackMessages.value.at(-1).message).toBe('File must not be empty')
     await wrapper.find('[aria-label="关闭弹窗"]').trigger('click')
     await wrapper.find('.page-heading .button--primary').trigger('click')
 
@@ -146,7 +150,7 @@ describe('MaterialsView', () => {
     expect(wrapper.find('.lecture-results').text()).toContain('找到 1 条依据')
     expect(wrapper.find('.chat-hit-number').text()).toBe('1')
     expect(wrapper.text()).toContain('函数定义域相关片段')
-    expect(wrapper.text()).toContain('仅 班级 A')
+    expect(wrapper.find('.class-scope-tag').exists()).toBe(false)
   })
 
   it('loads file content into a plain-text preview', async () => {

@@ -30,7 +30,7 @@ class GradingTaskQueryServiceTest {
         ReflectionTestUtils.setField(moved, "id", 2L);
         GradingTaskQueryService service = new GradingTaskQueryService(tasks, results,
                 mock(SubmissionRepository.class), mock(AssignmentRepository.class),
-                mock(UserAccountRepository.class), new ObjectMapper());
+                mock(UserAccountRepository.class), new ObjectMapper(), mock(com.campusclaw.persistence.SubmissionReviewRepository.class));
         assertThrows(NotFoundException.class, () -> service.view("task", moved));
         verifyNoInteractions(results);
     }

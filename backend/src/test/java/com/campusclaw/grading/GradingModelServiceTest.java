@@ -2,6 +2,7 @@ package com.campusclaw.grading;
 
 import com.campusclaw.config.AppProperties;
 import com.campusclaw.config.GradingProperties;
+import com.campusclaw.common.DependencyRejectedException;
 import com.campusclaw.gateway.ChatGateway;
 import com.campusclaw.persistence.Assignment;
 import com.campusclaw.persistence.Submission;
@@ -10,92 +11,104 @@ import tools.jackson.databind.ObjectMapper;
 import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 class GradingModelServiceTest {
-
-    @Test
-    void computesDeterministicScoreAndIgnoresModelTotal() {
+    @ParameterizedTest
+    @ValueSource(ints = {0, 87, 100})
+    void savesModelScoreWithoutFixedCriterionWeights(int score) {
         ChatGateway chat = mock(ChatGateway.class);
-        when(chat.complete(anyList())).thenReturn("""
-                {"criteria":[
-                  {"key":"c1","verdict":"MET","evidence":"a^2+b^2=c^2","explanation":"公式正确"},
-                  {"key":"c2","verdict":"PARTIAL","evidence":"说明了斜边","explanation":"解释基本正确"}
-                ],"overallRationale":"整体回答正确"}
-                """);
+        when(chat.complete(anyList())).thenAnswer(invocation -> {
+            List<ChatGateway.ChatMessage> messages = invocation.getArgument(0);
+            String prompt = messages.get(1).content();
+            assertTrue(prompt.contains("a²+b²=c²"));
+            assertTrue(prompt.contains("总分上限（服务端设定）：100"));
+            assertTrue(prompt.contains("<<<ANSWER"));
+            assertFalse(prompt.contains("MET|PARTIAL|NOT_MET"));
+            return "{\"score\":" + score + ",\"rationale\":\"公式正确，尚需补充推理及适用条件。\"}";
+        });
         GradingOutcome outcome = service(chat).grade(assignment(), submission());
-
-        assertEquals(80, outcome.score());
+        assertEquals(score, outcome.score());
         assertEquals(100, outcome.maxScore());
-        assertTrue(outcome.criteriaJson().contains("\"awardedPoints\":60"));
-        assertTrue(outcome.criteriaJson().contains("\"awardedPoints\":20"));
-        assertEquals("v1", outcome.promptVersion());
+        assertEquals("[]", outcome.criteriaJson());
+        assertEquals("v4", outcome.promptVersion());
         assertEquals("course-chat", outcome.modelName());
     }
 
-    @Test
-    void rejectsUnknownCriterionAndModelTotal() {
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "not json", "null", "{}", "{\"score\":87}",
+        "{\"score\":-1,\"rationale\":\"依据\"}",
+        "{\"score\":101,\"rationale\":\"依据\"}",
+        "{\"score\":87.5,\"rationale\":\"依据\"}",
+        "{\"score\":\"87\",\"rationale\":\"依据\"}",
+        "{\"score\":null,\"rationale\":\"依据\"}",
+        "{\"score\":2147483648,\"rationale\":\"依据\"}",
+        "{\"score\":87,\"rationale\":42}",
+        "{\"score\":87,\"rationale\":\" \"}",
+        "{\"score\":87,\"rationale\":null}",
+        "{\"score\":87,\"rationale\":\"依据\",\"criteria\":[]}",
+        "{\"score\":87,\"rationale\":\"依据\"} {}"
+    })
+    void rejectsInvalidScoresOrStructureWithoutClampingOrDefaults(String response) {
         ChatGateway chat = mock(ChatGateway.class);
-        when(chat.complete(anyList())).thenReturn("""
-                {"criteria":[
-                  {"key":"c1","verdict":"MET","evidence":"e","explanation":"x"},
-                  {"key":"other","verdict":"MET","evidence":"e","explanation":"x"}
-                ],"overallRationale":"x","score":80}
-                """);
-        GradingRetryableException exception = assertThrows(GradingRetryableException.class,
-                () -> service(chat).grade(assignment(), submission()));
-        assertEquals("MODEL_OUTPUT_INVALID", exception.code());
-    }
-
-    @Test
-    void rejectsNonJsonAndMapsModelFailureToRetryable() {
-        ChatGateway nonJson = mock(ChatGateway.class);
-        when(nonJson.complete(anyList())).thenReturn("not json");
+        when(chat.complete(anyList())).thenReturn(response);
         assertEquals("MODEL_OUTPUT_INVALID", assertThrows(GradingRetryableException.class,
-                () -> service(nonJson).grade(assignment(), submission())).code());
-
-        ChatGateway failing = mock(ChatGateway.class);
-        when(failing.complete(anyList())).thenThrow(new RuntimeException("provider down"));
-        assertEquals("MODEL_UNAVAILABLE", assertThrows(GradingRetryableException.class,
-                () -> service(failing).grade(assignment(), submission())).code());
+                () -> service(chat).grade(assignment(), submission())).code());
     }
 
     @Test
-    void acceptsSingleCodeFenceAroundJson() {
+    void rejectsLongRationaleAndAcceptsSingleFence() {
         ChatGateway chat = mock(ChatGateway.class);
-        when(chat.complete(anyList())).thenReturn("""
-                ```json
-                {"criteria":[
-                  {"key":"c1","verdict":"MET","evidence":"e","explanation":"x"},
-                  {"key":"c2","verdict":"NOT_MET","evidence":"e","explanation":"x"}
-                ],"overallRationale":"x"}
-                ```
-                """);
-        GradingOutcome outcome = service(chat).grade(assignment(), submission());
-        assertEquals(60, outcome.score());
+        when(chat.complete(anyList())).thenReturn("{\"score\":87,\"rationale\":\"" + "学".repeat(2001) + "\"}");
+        assertThrows(GradingRetryableException.class, () -> service(chat).grade(assignment(), submission()));
+        when(chat.complete(anyList())).thenReturn("```json\n{\"score\":87,\"rationale\":\"证据与建议\"}\n```");
+        assertEquals(87, service(chat).grade(assignment(), submission()).score());
     }
 
     @Test
-    void rejectsMissingRationaleNullVerdictAndTrailingJson() {
-        String valid = """
-                {"criteria":[
-                  {"key":"c1","verdict":"MET","evidence":"e","explanation":"x"},
-                  {"key":"c2","verdict":"MET","evidence":"e","explanation":"x"}
-                ],"overallRationale":"x"}
-                """.trim();
-        for (String invalid : List.of(valid.replace(",\"overallRationale\":\"x\"", ""),
-                valid.replace("\"verdict\":\"MET\"", "\"verdict\":null"), valid + " {}")) {
-            ChatGateway chat = mock(ChatGateway.class);
-            when(chat.complete(anyList())).thenReturn(invalid);
-            assertEquals("MODEL_OUTPUT_INVALID", assertThrows(GradingRetryableException.class,
-                    () -> service(chat).grade(assignment(), submission())).code());
-        }
+    void rejectsMissingReferenceAndDoesNotCallModel() {
+        ChatGateway chat = mock(ChatGateway.class);
+        Assignment invalid = new Assignment(1L, "Title", "Question", "[]", 100, 1L);
+        assertEquals("ASSIGNMENT_INVALID", assertThrows(GradingNonRetryableException.class,
+                () -> service(chat).grade(invalid, submission())).code());
+        verifyNoInteractions(chat);
+    }
+
+    @Test
+    void legacyDescriptionsAreReferenceTextWithoutFixedWeights() {
+        ChatGateway chat = mock(ChatGateway.class);
+        Assignment legacy = new Assignment(1L, "Title", "Question",
+                "[{\"key\":\"c1\",\"description\":\"直角三角形\",\"points\":100}]", 100, 1L);
+        when(chat.complete(anyList())).thenAnswer(invocation -> {
+            List<ChatGateway.ChatMessage> messages = invocation.getArgument(0);
+            assertTrue(messages.get(1).content().contains("直角三角形"));
+            assertFalse(messages.get(1).content().contains("points"));
+            return "{\"score\":87,\"rationale\":\"公式正确，解释仍不完整\"}";
+        });
+        assertEquals(87, service(chat).grade(legacy, submission()).score());
+    }
+
+    @Test
+    void dependencyFailuresRetainRetryClassification() {
+        ChatGateway chat = mock(ChatGateway.class);
+        when(chat.complete(anyList())).thenThrow(new RuntimeException("synthetic unavailable"));
+        assertEquals("MODEL_UNAVAILABLE", assertThrows(GradingRetryableException.class,
+                () -> service(chat).grade(assignment(), submission())).code());
+        org.mockito.Mockito.reset(chat);
+        when(chat.complete(anyList())).thenThrow(new DependencyRejectedException("synthetic rejection"));
+        assertEquals("MODEL_REQUEST_REJECTED", assertThrows(GradingNonRetryableException.class,
+                () -> service(chat).grade(assignment(), submission())).code());
     }
 
     private GradingModelService service(ChatGateway chat) {
@@ -105,11 +118,9 @@ class GradingModelServiceTest {
     }
 
     private Assignment assignment() {
-        String rubric = """
-                [{"key":"c1","description":"公式正确","points":60},
-                 {"key":"c2","description":"解释清楚","points":40}]
-                """;
-        return new Assignment(1L, "勾股定理", "解释勾股定理", rubric, 100, 1L);
+        Assignment assignment = new Assignment(1L, "勾股定理", "解释勾股定理", "[]", 100, 1L);
+        assignment.setRubricSources("[]", "直角三角形的两直角边 a、b 与斜边 c 满足 a²+b²=c²。");
+        return assignment;
     }
 
     private Submission submission() {
@@ -132,7 +143,7 @@ class GradingModelServiceTest {
         return new GradingProperties(false, false, false, 3,
                 Duration.ofSeconds(1), 2, 0.0, Duration.ofMinutes(1),
                 Duration.ofSeconds(90), Duration.ofSeconds(5), 10, Duration.ofSeconds(5),
-                "v1", "grading.events", "grading.tasks", "grading.dlq",
+                "v4", "grading.events", "grading.tasks", "grading.dlq",
                 "grading.dispatch", "grading.retry", "grading.dead-letter");
     }
 }

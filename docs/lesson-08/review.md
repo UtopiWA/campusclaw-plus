@@ -361,3 +361,176 @@
 - [ ] 实际成员评审完成后按授权办理规格同步、归档、提交/推送；标签单独授权。
 
 当前结论：**技术自审和运行验证通过，等待人工验收与成员交叉评审。** OWASP/NVD 未运行，没有自动发布、归档或代签。
+
+
+## 9. 作业批阅与交互反馈修正（2026-11-04）
+
+候选：`e26089e` 加本轮工作区。用户已明确授权文件依据、单次提交、教师终评、页面及顶部消息改造，并允许定向清理指定合成数据。代码由协作代理辅助生成、实施、自审和验证；**实际成员交叉评审未完成，本节不代签**。执行命令与数量见[验收第 9 节](README.md#9-作业批阅与交互修正2026-11-04)。
+
+### 9.1 七维与高风险
+
+| 维度 | 依据与结论 |
+| --- | --- |
+| 需求覆盖 | 五项反馈已实现；教师新建/终评弹窗、学生一次提交/结果替换、顶部消息和定向清理均有实际证据 |
+| 需求一致性 | 先修订原 change 非目标与版本语义；V9 增量迁移，旧字段/AI 原始结果兼容保留，当前主规格未提前同步 |
+| 失败路径 | 空/超限/非 READY/跨班文件、异常模型结构及分值拒绝；失败无作业，表单保留；待出分列表空值500已修并补回归 |
+| 查询性能 | 本班作业限制、最多200历史提交后取每人最新，任务/结果/终评/用户名批量关联；文件最多5个/20000字；EXPLAIN主键与唯一键命中，列表存在有限 filesort，不冒称大班压测 |
+| 重复代码 | 复用 AppShell/BaseModal/现有表单、认证客户端和 ChatGateway；顶部反馈集中服务，未引入新依赖或通用任务框架 |
+| 漏洞风险 | 写入限教师本班，作答读取限本人和本班，模型数据不作指令、严格结构/类型/分值，Vue文本插值无原始HTML；默认scan零告警，OWASP未运行 |
+| 高风险 | 作业锁保证一次提交；提交/任务/发件箱仍同事务；终评锁提交行且唯一，AI结果不可变；迟到attempt隔离保留，实际终评优先及刷新恢复通过 |
+
+并发/事务/一致性专门复核：创建评分依据的模型调用不处于数据库事务；模型失败不保存作业。学生在作业行锁内先去重再检查已有提交；并发两个不同答案仅一个成功。教师终评短事务锁定本班提交后新增/更新，一提交一条，不调用网络；worker仅操作任务/AI结果，不会覆盖终评，即便AI晚于终评完成。任务轮询与低频终评摘要分开，切换/卸载取消及版本校验阻止旧响应写回。
+
+清理专门复核：仅已确认的种子/验收作业及指定MCP，FK按序删除，死信先验证全部对应已删合成taskId，未改变常规审计删除保护；保留正常技能/助手/campus-tool和四个账号，原六容器未变。未进行全库或其他项目清理。
+
+### 9.2 逐文件技术自审
+
+“可用”为代理技术自审结论，不能替代成员评审签署；新增文件包括在内。
+
+| 文件 | 结论 | 核对依据 |
+| --- | --- | --- |
+| `.env.example` | 可用 | 评分 promptVersion 默认 v3 对齐；实际团队 Web/worker 使用 v3，未改原项目私有配置 |
+| `README.md` | 可用 | 对照当前实现、命令、授权范围和活动状态同步；不引用仓库外资源，不代签或提前归档 |
+| `backend/src/main/java/com/campusclaw/grading/AssignmentController.java` | 可用 | Controller角色与输入校验；DTO追加文件/作答/AI/终评，保留历史字段兼容；真实API及集成通过 |
+| `backend/src/main/java/com/campusclaw/grading/AssignmentCreationService.java` | 可用 | 同班 READY 文件、内容快照、事务外模型、严格字段/类型/分值；失败不保存，边界单元及集成通过 |
+| `backend/src/main/java/com/campusclaw/grading/AssignmentService.java` | 可用 | AI/终评分开读取，有效分数终评优先，空结果不拆箱；列表批量关联并有上限 |
+| `backend/src/main/java/com/campusclaw/grading/AssignmentView.java` | 可用 | Controller角色与输入校验；DTO追加文件/作答/AI/终评，保留历史字段兼容；真实API及集成通过 |
+| `backend/src/main/java/com/campusclaw/grading/CreateAssignmentRequest.java` | 可用 | Controller角色与输入校验；DTO追加文件/作答/AI/终评，保留历史字段兼容；真实API及集成通过 |
+| `backend/src/main/java/com/campusclaw/grading/GradingModelService.java` | 可用 | 文件快照限定为数据、中文解释，原分项确定性计分和有限重试保留 |
+| `backend/src/main/java/com/campusclaw/grading/GradingTaskQueryService.java` | 可用 | AI/终评分开读取，有效分数终评优先，空结果不拆箱；列表批量关联并有上限 |
+| `backend/src/main/java/com/campusclaw/grading/GradingTaskView.java` | 可用 | Controller角色与输入校验；DTO追加文件/作答/AI/终评，保留历史字段兼容；真实API及集成通过 |
+| `backend/src/main/java/com/campusclaw/grading/ReviewSubmissionRequest.java` | 可用 | Controller角色与输入校验；DTO追加文件/作答/AI/终评，保留历史字段兼容；真实API及集成通过 |
+| `backend/src/main/java/com/campusclaw/grading/RubricSourceView.java` | 可用 | Controller角色与输入校验；DTO追加文件/作答/AI/终评，保留历史字段兼容；真实API及集成通过 |
+| `backend/src/main/java/com/campusclaw/grading/SubmissionReviewService.java` | 可用 | 当前教师与本班/提交组合查询，提交行锁串行终评更新，分数上限与评语边界 |
+| `backend/src/main/java/com/campusclaw/grading/SubmissionService.java` | 可用 | 沿用作业行锁，在原去重后拒绝第二份不同答案；并发一成功一冲突，无多余任务 |
+| `backend/src/main/java/com/campusclaw/grading/TeacherReviewView.java` | 可用 | Controller角色与输入校验；DTO追加文件/作答/AI/终评，保留历史字段兼容；真实API及集成通过 |
+| `backend/src/main/java/com/campusclaw/grading/TeacherSubmissionView.java` | 可用 | Controller角色与输入校验；DTO追加文件/作答/AI/终评，保留历史字段兼容；真实API及集成通过 |
+| `backend/src/main/java/com/campusclaw/persistence/Assignment.java` | 可用 | 字段/组合归属与 V9 对齐；终评一提交一条，锁定查询走主键，不包含外部网络 |
+| `backend/src/main/java/com/campusclaw/persistence/SubmissionRepository.java` | 可用 | 字段/组合归属与 V9 对齐；终评一提交一条，锁定查询走主键，不包含外部网络 |
+| `backend/src/main/java/com/campusclaw/persistence/SubmissionReview.java` | 可用 | 字段/组合归属与 V9 对齐；终评一提交一条，锁定查询走主键，不包含外部网络 |
+| `backend/src/main/java/com/campusclaw/persistence/SubmissionReviewRepository.java` | 可用 | 字段/组合归属与 V9 对齐；终评一提交一条，锁定查询走主键，不包含外部网络 |
+| `backend/src/main/resources/application.yml` | 可用 | 评分 promptVersion 默认 v3 对齐；实际团队 Web/worker 使用 v3，未改原项目私有配置 |
+| `backend/src/main/resources/db/migration/V9__assignment_rubric_sources_and_reviews.sql` | 可用 | V9 前向新增可空快照和独立终评表，FK/唯一键/索引；空库及团队 V8→V9 通过 |
+| `backend/src/test/java/com/campusclaw/CampusClawIntegrationTest.java` | 可用 | 保留适用原断言并更新展示契约；加入失败/并发/权限/模型结构/恢复断言，最终套件通过 |
+| `backend/src/test/java/com/campusclaw/grading/AssignmentCreationServiceTest.java` | 可用 | 保留适用原断言并更新展示契约；加入失败/并发/权限/模型结构/恢复断言，最终套件通过 |
+| `backend/src/test/java/com/campusclaw/grading/GradingTaskQueryServiceTest.java` | 可用 | 保留适用原断言并更新展示契约；加入失败/并发/权限/模型结构/恢复断言，最终套件通过 |
+| `docker-compose.yml` | 可用 | 评分 promptVersion 默认 v3 对齐；实际团队 Web/worker 使用 v3，未改原项目私有配置 |
+| `docs/lesson-08/README.md` | 可用 | 对照当前实现、命令、授权范围和活动状态同步；不引用仓库外资源，不代签或提前归档 |
+| `docs/lesson-08/handoff.md` | 可用 | 对照当前实现、命令、授权范围和活动状态同步；不引用仓库外资源，不代签或提前归档 |
+| `docs/lesson-08/review.md` | 可用 | 对照当前实现、命令、授权范围和活动状态同步；不引用仓库外资源，不代签或提前归档 |
+| `docs/project-status.md` | 可用 | 对照当前实现、命令、授权范围和活动状态同步；不引用仓库外资源，不代签或提前归档 |
+| `docs/standards/01-product.md` | 可用 | 对照当前实现、命令、授权范围和活动状态同步；不引用仓库外资源，不代签或提前归档 |
+| `docs/standards/02-backend.md` | 可用 | 对照当前实现、命令、授权范围和活动状态同步；不引用仓库外资源，不代签或提前归档 |
+| `docs/standards/05-operations.md` | 可用 | 对照当前实现、命令、授权范围和活动状态同步；不引用仓库外资源，不代签或提前归档 |
+| `frontend/src/App.vue` | 可用 | 在路由视图旁挂载全局消息容器，覆盖登录、页面与弹窗 |
+| `frontend/src/components/AppFeedback.test.js` | 可用 | 保留适用原断言并更新展示契约；加入失败/并发/权限/模型结构/恢复断言，最终套件通过 |
+| `frontend/src/components/AppFeedback.vue` | 可用 | 全局消息，4秒/6秒、手动关闭、重复文案、最多4条、ARIA和文本插值；计时及真实浏览器通过 |
+| `frontend/src/components/AppShell.test.js` | 可用 | 保留适用原断言并更新展示契约；加入失败/并发/权限/模型结构/恢复断言，最终套件通过 |
+| `frontend/src/components/AppShell.vue` | 可用 | 退出失败显示顶部错误；本地身份清理后仍导航登录，原角色导航回归保留 |
+| `frontend/src/components/BaseModal.vue` | 可用 | 初始焦点、Tab圈定、Escape和返回焦点；桌面/手机弹窗真实浏览器通过 |
+| `frontend/src/services/assignments.js` | 可用 | 复用认证请求，新增终评PUT及读取AbortSignal，旧端点保持 |
+| `frontend/src/services/feedback.js` | 可用 | 全局消息，4秒/6秒、手动关闭、重复文案、最多4条、ARIA和文本插值；计时及真实浏览器通过 |
+| `frontend/src/views/AgentConfigView.test.js` | 可用 | 保留适用原断言并更新展示契约；加入失败/并发/权限/模型结构/恢复断言，最终套件通过 |
+| `frontend/src/views/AgentConfigView.vue` | 可用 | 原操作反馈接入全局消息，失败输入和业务状态保留；页面回归与 lint 通过 |
+| `frontend/src/views/AssignmentsView.test.js` | 可用 | 保留适用原断言并更新展示契约；加入失败/并发/权限/模型结构/恢复断言，最终套件通过 |
+| `frontend/src/views/AssignmentsView.vue` | 可用 | 复用壳/弹窗/表单；教师真实提交表和手机溢出已修；一次提交、终评优先、取消旧响应、摘要刷新实际通过 |
+| `frontend/src/views/ConversationsView.test.js` | 可用 | 保留适用原断言并更新展示契约；加入失败/并发/权限/模型结构/恢复断言，最终套件通过 |
+| `frontend/src/views/ConversationsView.vue` | 可用 | 原操作反馈接入全局消息，失败输入和业务状态保留；页面回归与 lint 通过 |
+| `frontend/src/views/LoginView.vue` | 可用 | 原操作反馈接入全局消息，失败输入和业务状态保留；页面回归与 lint 通过 |
+| `frontend/src/views/MaterialsView.test.js` | 可用 | 保留适用原断言并更新展示契约；加入失败/并发/权限/模型结构/恢复断言，最终套件通过 |
+| `frontend/src/views/MaterialsView.vue` | 可用 | 原操作反馈接入全局消息，失败输入和业务状态保留；页面回归与 lint 通过 |
+| `frontend/src/views/SearchView.test.js` | 可用 | 保留适用原断言并更新展示契约；加入失败/并发/权限/模型结构/恢复断言，最终套件通过 |
+| `frontend/src/views/SearchView.vue` | 可用 | 原操作反馈接入全局消息，失败输入和业务状态保留；页面回归与 lint 通过 |
+| `frontend/test-support/mountWithFeedback.js` | 可用 | 测试挂载实际全局消息组件，不以移除错误断言替代展示回归 |
+| `openspec/changes/2026-11-03-add-async-assignment-grading/README.md` | 可用 | 对照当前实现、命令、授权范围和活动状态同步；不引用仓库外资源，不代签或提前归档 |
+| `openspec/changes/2026-11-03-add-async-assignment-grading/design.md` | 可用 | 对照当前实现、命令、授权范围和活动状态同步；不引用仓库外资源，不代签或提前归档 |
+| `openspec/changes/2026-11-03-add-async-assignment-grading/proposal.md` | 可用 | 对照当前实现、命令、授权范围和活动状态同步；不引用仓库外资源，不代签或提前归档 |
+| `openspec/changes/2026-11-03-add-async-assignment-grading/specs/assignment-grading/spec.md` | 可用 | 对照当前实现、命令、授权范围和活动状态同步；不引用仓库外资源，不代签或提前归档 |
+| `openspec/changes/2026-11-03-add-async-assignment-grading/tasks.md` | 可用 | 对照当前实现、命令、授权范围和活动状态同步；不引用仓库外资源，不代签或提前归档 |
+
+### 9.3 发现、整改与门槛
+
+- 待出分/失败记录无分数时，嵌套条件表达式隐式拆箱导致学生列表500：改为可空Integer分支，补学生列表/详情及教师列表断言；最终集成通过。
+- 弹窗遗漏已有表单类、教师有真实行时网格及隐藏表头标签造成手机横向溢出：接入现有样式、约束网格轨道和滚动容器定位；桌面、手机弹窗及五种断点复查通过。
+- 模型评分项小数/字符串可能被反序列化强转：读树明确要求整数和文本节点，再严格反序列化；新增拒绝场景通过，无半份作业。
+- 自动测试不替代人工：unit/integration、默认扫描、真实模型/浏览器和清理后最终烟测已完成；八脚本旧API套件、全套停启/DLQ故障及OWASP本轮未重跑，不把第8节结果冒充本轮执行。
+
+- [x] 本轮用户反馈已实现、技术自审及受影响验证通过，实际证据入库。
+- [ ] 用户人工验收与另一成员针对当前候选独立复现/交叉评审。
+- [ ] 完成人员门槛并取得授权后，同步主规格、归档及提交/发布；标签仍需单独授权。
+
+
+## 10. 参考答案支持的 AI 综合评分（2026-11-05）
+
+范围为用户明确授权的评分策略调整，继续使用原活动change。协作代理辅助实现和技术自审，不代签成员评审。最终测试、真实模型与清理证据见[验收第10节](README.md#10-参考答案支持的-ai-综合评分2026-11-05)。第9节以前的分项评分为历史记录。
+
+### 10.1 七维与高风险
+
+| 维度 | 本轮结论 |
+| --- | --- |
+| 覆盖 | 纯答案文件可创建，不提取评分项；模型直接给分并说明理由；页面文案、历史兼容及终评通过 |
+| 一致性 | 先修订活动spec/design及AGENTS评分规则；不更改课程异步判据、权限、一次提交或迁移，不新增模式开关 |
+| 失败路径 | 小数/字符串/缺失/越界分数、无效评语、未知字段及尾随JSON均拒绝；无默认分或分数裁剪，有限重试/DLQ逻辑沿用 |
+| 查询性能 | 沿用V9及原查询/索引，无新增SQL、循环查询或外部依赖；参考文件读取仍最多5个/20000字；创建少一次模型调用，不宣称本轮压测 |
+| 重复代码 | 删除提取模型及满/半/零计分；保留RubricCodec/历史分项DTO仅为旧格式兼容，不维护两套后台评分模式 |
+| 漏洞风险 | 默认scan全通过，无新依赖；来源仍限本班READY、模型严格输出校验、日志未命中本轮内容/秘密哨兵；不把格式合法视为语义可靠 |
+| 高风险 | 认领、attempt隔离、结果唯一及提交事务未改；AI原始结果与教师终评独立，真实重复投递/终评替换通过，原结果整行指纹保持 |
+
+并发、事务、一致性专门核对：创建不再调用模型，只在短事务保存快照；评分仍在worker事务外，结果与任务终态仍同事务提交。旧任务重新投递仍只跳过，不重算已有成绩；新结果空criteria不会覆盖历史分项。教师终评优先级不变，真实合成作答终评为92后AI原始20分保持，刷新及重投不改变结果。新旧JSON读取无需新DDL。
+
+已知边界：AI评分会波动，服务端只验证结构和范围，不能证明分数语义准确；教师按需终评。参考答案仍是同班可读材料，没有新增教师私有附件或改变材料授权。真实20/95为观察值，自动测试的87为控制值，两者明确区分。八脚本旧API、全套停启/DLQ及可选OWASP本轮未重跑。
+
+### 10.2 逐文件技术自审
+
+| 文件 | 结论 | 依据 |
+| --- | --- | --- |
+| `AGENTS.md` | 可用 | 按用户决定明确AI评分可参考答案直接给分，保留范围/解释/终评要求及其他计算边界 |
+| `README.md` | 可用 | 更新创建无模型调用、参考答案、AI综合分数及终评的使用说明 |
+| `.env.example` | 可用 | promptVersion默认说明v4，无真实值 |
+| `docker-compose.yml` | 可用 | Web/worker默认v4一致，团队实际部署验证，其他项目未改 |
+| `backend/src/main/resources/application.yml` | 可用 | 默认v4，原环境覆盖和评分配置验证保留 |
+| `backend/src/main/java/com/campusclaw/grading/AssignmentCreationService.java` | 可用 | 删除ChatGateway及提取逻辑，只读取/校验同班参考快照并短保存 |
+| `backend/src/main/java/com/campusclaw/grading/AssignmentService.java` | 可用 | 文件模式独立总分及空历史criteria，旧API兼容，不更改已存作业 |
+| `backend/src/main/java/com/campusclaw/grading/GradingModelService.java` | 可用 | 参考内容与作答限定为数据，严格节点类型/范围/评语校验，原样保存模型分数及v4 |
+| `backend/src/main/java/com/campusclaw/grading/ModelGradingResponse.java` | 可用 | 仅score/rationale，删除ModelCriterion，服务端拒绝未知/缺失字段 |
+| `backend/src/test/java/com/campusclaw/grading/AssignmentCreationServiceTest.java` | 可用 | 6项真实保存/读取边界；去除未注入模型mock的无效断言，创建无模型由Spring集成覆盖 |
+| `backend/src/test/java/com/campusclaw/grading/GradingModelServiceTest.java` | 可用 | 22项覆盖0/87/100、JSON类型/结构/长度、参考缺失、旧格式和依赖错误分类 |
+| `backend/src/test/java/com/campusclaw/CampusClawIntegrationTest.java` | 可用 | 同一共享ChatGateway创建零调用、后台无事务模型87原值持久化；保留先前单次提交/终评权限断言 |
+| `frontend/src/views/AssignmentsView.vue` | 可用 | 参考答案文件、AI评语及原评分明细；不增加必填评分项，旧终评/轮询/取消机制保留 |
+| `frontend/src/views/AssignmentsView.test.js` | 可用 | 82项前端套件中新增87分无分项显示，文件文案和失败输入、终评恢复回归通过 |
+| `openspec/config.yaml` | 可用 | 纠正过期的教师终评未实现事实，与活动规约/当前代码一致 |
+| `docs/project-scope.md` | 可用 | 修正评分服务职责和当前范围，其他未来模块边界不变 |
+| `docs/project-status.md` | 可用 | 当前AI综合评分、创建无提取和最新验收链接，保持活动状态 |
+| `docs/standards/02-backend.md` | 可用 | 模型评分与服务端校验职责及v4同步，权限/统计计算规则保留 |
+| `docs/lesson-08/README.md` | 可用 | 分开第9节历史与本轮命令/实测，不将模拟值当真实模型输出 |
+| `docs/lesson-08/handoff.md` | 可用 | 另一成员复现以最新第10节及当前候选为准，不代签 |
+| `docs/lesson-08/review.md` | 可用 | 七维、逐文件及高风险记录，仍待实际成员交叉评审 |
+| `openspec/changes/2026-11-03-add-async-assignment-grading/proposal.md` | 可用 | 最新用户决定替换原评分口径，不扩大其他业务范围 |
+| `openspec/changes/2026-11-03-add-async-assignment-grading/design.md` | 可用 | 严格score/rationale、无提取、兼容旧结果、v4及事务边界 |
+| `openspec/changes/2026-11-03-add-async-assignment-grading/specs/assignment-grading/spec.md` | 可用 | 纯答案创建、综合87分、非法输出和历史兼容均有场景 |
+| `openspec/changes/2026-11-03-add-async-assignment-grading/tasks.md` | 可用 | 历史清单保留，新增本轮4.x并只按实际完成勾选 |
+| `openspec/changes/2026-11-03-add-async-assignment-grading/README.md` | 可用 | 最新策略及第10节入口，仍为活动change |
+
+### 10.3 门槛
+
+- [x] 本轮参考答案评分改造、技术自审、unit/integration/默认scan及真实模型/页面验证完成；仅清理登记合成数据，旧结果与其他六容器保持。
+- [ ] 用户人工验收与另一成员对当前候选独立复现/交叉评审。
+- [ ] 人员门槛完成并获授权后办理主规格同步、归档、提交或标签；本轮未执行。
+
+
+## 11. 初验后的文案与演示清理（2026-11-05）
+
+用户已确认初步功能检验通过，另一成员评审不代签。本轮只清理展示及指定合成数据，范围与实测见[验收第11节](README.md#11-初验后的文案与演示清理2026-11-05)。七维复核：用户所列文案已覆盖；权限/异步契约未改；原失败提示与空态保留；无新查询/依赖/网络；删去失效样式；82项前端、lint/build及真实浏览器通过。并发/事务/一致性：数据清理精确锁定id14，确认任务终态及发件箱无待发，按FK依赖在同事务删除，其他作业前后相同；未改材料线程池或任务状态机。
+
+| 文件 | 结论 | 依据 |
+| --- | --- | --- |
+| `frontend/src/components/AppShell.vue` | 可用 | 删除侧栏宣传，保留身份与导航；禁用入口说明不提课程实现 |
+| `frontend/src/views/MaterialsView.vue` | 可用 | 删除重复范围/权限展示，保留两项真实统计、检索和上传状态；五断点通过 |
+| `frontend/src/views/AgentConfigView.vue` | 可用 | 配置/调用说明使用业务语言，未删必要MCP凭据字段 |
+| `frontend/src/views/LoginView.vue` | 可用 | 使用实际功能介绍，不展示底层鉴权宣传；登录表单保留 |
+| `frontend/src/styles.css` | 可用 | 清理已删元素样式，两列材料概览保留手机单列 |
+| `frontend/src/views/MaterialsView.test.js` | 可用 | 更新原界面断言，保留API/上传/权限/内容测试，82项套件通过 |
+| `docs/standards/01-product.md` | 可用 | 明确文案描述实际操作，不重复底层鉴权宣传 |
+| `docs/project-status.md` | 可用 | 如实记录用户初验及旧演示已删，成员复核仍待完成 |
+| `docs/lesson-08/README.md`、`handoff.md`、`review.md` | 可用 | 第11节区分本轮前端证据与历史业务测试；当前复现需新建作业 |
+| 原活动change的design/spec/tasks | 可用 | 已获授权的文案约定、精确清理及验证纳入原范围，不新增消息架构改造 |

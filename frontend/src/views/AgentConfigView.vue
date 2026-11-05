@@ -1,4 +1,5 @@
 <script setup>
+import { feedbackRef } from '../services/feedback.js'
 import { computed, onMounted, reactive, ref } from 'vue'
 import AppIcon from '../components/AppIcon.vue'
 import AppShell from '../components/AppShell.vue'
@@ -22,8 +23,8 @@ const mcpServers = ref([])
 const mcpTools = ref([])
 const mcpCalls = ref([])
 const loading = ref(true)
-const error = ref('')
-const notice = ref('')
+const error = feedbackRef('error')
+const notice = feedbackRef('success')
 const assistantOpen = ref(false)
 const skillOpen = ref(false)
 const mcpOpen = ref(false)
@@ -296,14 +297,14 @@ onMounted(load)
   <AppShell current="assistant-config">
     <div class="page-container agent-config-page">
       <header class="page-heading">
-        <div><p class="breadcrumb">教学空间 <span>/</span> 助手配置</p><h1>智能体与技能</h1><p>设置角色提示词、确定性技能和可检索讲义范围。</p></div>
+        <div><p class="breadcrumb">教学空间 <span>/</span> 助手配置</p><h1>智能体与技能</h1><p>配置助手角色、技能与参考讲义。</p></div>
         <button class="button button--primary" type="button" @click="tab === 'assistants' ? editAssistant() : tab === 'skills' ? editSkill() : editMcp()">
           <span aria-hidden="true">＋</span>{{ tab === 'assistants' ? '新建智能体' : tab === 'skills' ? '新建技能' : '登记 MCP 服务' }}
         </button>
       </header>
 
-      <p v-if="error && !assistantOpen && !skillOpen && !mcpOpen && !deleteTarget" class="feedback feedback--error" role="alert">{{ error }}</p>
-      <p v-if="notice" class="feedback feedback--success" role="status">{{ notice }}</p>
+
+
       <div class="config-tabs" role="tablist" aria-label="配置类别">
         <button :class="{ active: tab === 'assistants' }" role="tab" type="button" @click="tab = 'assistants'">智能体 <span>{{ assistants.length }}</span></button>
         <button :class="{ active: tab === 'skills' }" role="tab" type="button" @click="tab = 'skills'">技能 <span>{{ skills.length }}</span></button>
@@ -376,7 +377,7 @@ onMounted(load)
             </div>
           </section>
           <section class="content-card mcp-audit">
-            <header class="mcp-section-heading"><div><h2>最近工具调用</h2><p>仅展示当前班级最近 50 条安全审计记录。</p></div></header>
+            <header class="mcp-section-heading"><div><h2>最近工具调用</h2><p>最近 50 次调用。</p></div></header>
             <div class="mcp-audit-metrics" aria-label="近期调用统计">
               <article><span>近期调用</span><strong>{{ mcpAuditStats.total }}</strong><small>当前列表</small></article>
               <article><span>成功调用</span><strong>{{ mcpAuditStats.success }}</strong><small>状态为成功</small></article>
@@ -402,7 +403,7 @@ onMounted(load)
         <label>角色提示词<textarea v-model="assistantDraft.promptText" rows="6" maxlength="2000" placeholder="留空时使用平台默认教学助手角色" /></label>
         <fieldset><legend>绑定技能</legend><div class="option-grid"><label v-for="item in skills" :key="item.id"><input v-model="assistantDraft.skillIds" type="checkbox" :value="item.id" /><span><strong>{{ item.name }}</strong><small>{{ item.triggerText }}</small></span></label><p v-if="!skills.length">暂无可绑定技能</p></div></fieldset>
         <fieldset><legend>绑定 READY 讲义</legend><div class="option-grid"><label v-for="item in readyMaterials" :key="item.id"><input v-model="assistantDraft.materialIds" type="checkbox" :value="item.id" /><span><strong>{{ item.title }}</strong><small>{{ item.originalFilename || '虚拟材料' }}</small></span></label><p v-if="!readyMaterials.length">暂无已完成索引的讲义</p></div></fieldset>
-        <p v-if="error" class="feedback feedback--error" role="alert">{{ error }}</p>
+
       </form>
       <template #footer><button class="button button--secondary" type="button" :disabled="saving" @click="assistantOpen = false">取消</button><button class="button button--primary" form="assistant-form" type="submit" :disabled="saving">{{ saving ? '保存中…' : '保存配置' }}</button></template>
     </BaseModal>
@@ -422,7 +423,7 @@ onMounted(load)
           <label v-for="tool in selectableToolRefs" :key="tool.ref"><input v-model="skillDraft.toolRefs" type="checkbox" :value="tool.ref" /><span><strong>{{ toolReferenceLabel(tool.ref) }}</strong><small>{{ tool.description }}</small></span></label>
           <p v-if="!mcpTools.length">连接 MCP 服务后可选择外部工具。</p>
         </fieldset>
-        <p v-if="error" class="feedback feedback--error" role="alert">{{ error }}</p>
+
       </form>
       <template #footer><button class="button button--secondary" type="button" :disabled="saving" @click="skillOpen = false">取消</button><button class="button button--primary" form="skill-form" type="submit" :disabled="saving">{{ saving ? '保存中…' : '保存技能' }}</button></template>
     </BaseModal>
@@ -432,13 +433,13 @@ onMounted(load)
         <label>服务名<input v-model="mcpDraft.name" required maxlength="32" placeholder="campus-tools" /></label>
         <label>Base URL<input v-model="mcpDraft.baseUrl" required maxlength="512" placeholder="http://mcp-demo:8090" /></label>
         <label>Bearer Token<input v-model="mcpDraft.token" :required="!mcpDraft.id" maxlength="512" type="password" autocomplete="new-password" placeholder="编辑时留空表示保持原值" /></label>
-        <p v-if="error" class="feedback feedback--error" role="alert">{{ error }}</p>
+
       </form>
       <template #footer><button class="button button--secondary" type="button" :disabled="saving" @click="mcpOpen = false">取消</button><button class="button button--primary" form="mcp-form" type="submit" :disabled="saving">{{ saving ? '保存中…' : '保存服务' }}</button></template>
     </BaseModal>
 
     <BaseModal v-if="deleteTarget" :title="deleteTarget.type === 'assistant' ? '删除智能体' : deleteTarget.type === 'skill' ? '删除技能' : '删除 MCP 服务'" :description="deleteTarget.type === 'assistant' ? '只有尚未产生历史消息的智能体可以删除。' : deleteTarget.type === 'skill' ? '此操作会解除所有智能体对该技能的绑定。' : '已有调用审计的服务不能删除，可以改为断开。'" @close="!saving && (deleteTarget = null)">
-      <div class="delete-warning"><span><AppIcon name="trash" /></span><p v-if="deleteTarget.type === 'assistant'">确定删除“{{ deleteTarget.item.name }}”吗？零消息空会话会自动清理；如果已有真实消息，系统会拒绝删除并建议停用。</p><p v-else-if="deleteTarget.type === 'skill'">确定删除“{{ deleteTarget.item.name }}”吗？讲义和智能体本身不会被删除。</p><p v-else>确定删除“{{ deleteTarget.item.name }}”吗？如果已有历史审计，系统会拒绝并保留全部数据。</p></div><p v-if="error" class="feedback feedback--error" role="alert">{{ error }}</p>
+      <div class="delete-warning"><span><AppIcon name="trash" /></span><p v-if="deleteTarget.type === 'assistant'">确定删除“{{ deleteTarget.item.name }}”吗？零消息空会话会自动清理；如果已有真实消息，系统会拒绝删除并建议停用。</p><p v-else-if="deleteTarget.type === 'skill'">确定删除“{{ deleteTarget.item.name }}”吗？讲义和智能体本身不会被删除。</p><p v-else>确定删除“{{ deleteTarget.item.name }}”吗？如果已有历史审计，系统会拒绝并保留全部数据。</p></div>
       <template #footer><button class="button button--secondary" type="button" :disabled="saving" @click="deleteTarget = null">取消</button><button class="button button--danger" type="button" :disabled="saving" @click="confirmDelete">确认删除</button></template>
     </BaseModal>
   </AppShell>

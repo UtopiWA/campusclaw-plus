@@ -50,7 +50,9 @@ docker compose --env-file .env.team down
 
 ### 异步作业批改
 
-Compose 同时启动 RabbitMQ 和独立 `grading-worker`。教师在 `/assignments` 创建带评分依据的文本作业，学生提交后收到 202 和任务标识；后台 worker 调用模型做分项判断，服务端按评分依据确定性计分。任务状态通过 `/api/grading/tasks/{taskId}` 只读查询，页面轮询到终态停止。
+Compose 同时启动 RabbitMQ 和独立 `grading-worker`。教师先在讲义页上传参考答案（`.txt/.md`），待解析完成后，在 `/assignments` 的“新建作业”弹窗填写标题、详细题目、总分并绑定文件。系统只保存参考答案快照，创建时不调用模型；学生每份作业只可提交一次，提交后展示本人作答及批改结果。后台 worker 让 AI 结合题目、总分、参考答案与作答综合给分并说明理由，服务端校验分数范围和输出结构；教师可在“改分”弹窗填写终评分数和评语，学生优先显示教师终评。
+
+任务状态通过 `/api/grading/tasks/{taskId}` 只读查询，页面刷新可恢复结果；成功/失败操作提示统一从顶部弹出并自动关闭。
 
 ```powershell
 docker compose --env-file .env.team stop grading-worker

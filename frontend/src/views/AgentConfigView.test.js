@@ -1,4 +1,6 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { mountWithFeedback as mount } from '../../test-support/mountWithFeedback.js'
+import { feedbackMessages } from '../services/feedback.js'
+import {flushPromises} from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../services/api.js'
 
@@ -117,7 +119,7 @@ describe('AgentConfigView', () => {
     await wrapper.find('#skill-form').trigger('submit')
     await flushPromises()
 
-    expect(wrapper.text()).toContain(`保存失败 ${status}`)
+    expect(feedbackMessages.value.at(-1).message).toBe(`保存失败 ${status}`)
     expect(wrapper.find('.skill-form-grid textarea').element.value).toBe('需要保留的行为说明')
   })
 

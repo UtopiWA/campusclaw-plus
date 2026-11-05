@@ -1,561 +1,386 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import AppShell from '../components/AppShell.vue'
+import AppIcon from '../components/AppIcon.vue'
+import BaseModal from '../components/BaseModal.vue'
 import { authState } from '../services/auth.js'
-import { ApiError } from '../services/api.js'
+import { listMaterials } from '../services/agents.js'
+import { showFeedback } from '../services/feedback.js'
 import {
-  createAssignment as createAssignmentRequest,
-  getGradingTask,
-  listAssignments,
-  listTeacherSubmissions,
-  submitAssignment,
+  createAssignment, getAssignment, getGradingTask, listAssignments,
+  listTeacherSubmissions, reviewSubmission, submitAssignment,
 } from '../services/assignments.js'
 
 const isTeacher = computed(() => authState.user?.role === 'teacher')
 const assignments = ref([])
-const loading = ref(true)
-const error = ref('')
-const notice = ref('')
 const selectedId = ref(null)
 const selected = computed(() => assignments.value.find((item) => item.id === selectedId.value) || null)
+const loading = ref(true)
 const submissions = ref([])
 const submissionsLoading = ref(false)
 const submitting = ref(false)
 const submitContent = ref('')
 const task = ref(null)
-const pollAttempts = ref(0)
-let pollTimer = null
-let selectionVersion = 0
-let disposed = false
-let taskRequest = null
-let submissionsRequest = null
-
+const submitted = computed(() => !!selected.value?.myLatest || !!task.value)
+const effectiveReview = computed(() => task.value?.teacherReview || selected.value?.myLatest?.teacherReview)
 const createOpen = ref(false)
 const createBusy = ref(false)
-const createError = ref('')
-let criterionSeq = 0
-const form = ref({ title: '', prompt: '', criteria: [newCriterion()] })
+const materials = ref([])
+const form = ref({ title: '', prompt: '', maxScore: 100, rubricMaterialIds: [] })
+const reviewTarget = ref(null)
+const reviewBusy = ref(false)
+const reviewForm = ref({ score: '', comment: '' })
+let disposed = false
+let selectionVersion = 0
+let pollTimer = null
+let reviewTimer = null
+let failures = 0
+const requests = new Set()
 
-function newCriterion() {
-  criterionSeq += 1
-  return { key: `c${criterionSeq}`, description: '', points: 10 }
+const terminal = (status) => ['SUCCEEDED', 'FAILED'].includes(status)
+const statusLabel = (status) => ({ PENDING: '待批改', RUNNING: '批改中', SUCCEEDED: '已批改', FAILED: '待教师处理' })[status] || '待提交'
+const errorMessage = (exception) => exception?.message || '操作失败，请稍后重试'
+const notifyError = (exception) => showFeedback(errorMessage(exception))
+const finalScore = computed(() => effectiveReview.value?.score ?? task.value?.result?.score)
+const finalComment = computed(() => effectiveReview.value?.comment ?? task.value?.result?.rationale)
+const rubricFiles = computed(() => materials.value.filter((item) => item.indexStatus === 'READY' && (item.hasFile || item.originalFilename)))
+
+function listState(item) {
+  if (isTeacher.value) return '已发布'
+  if (Number.isFinite(item.myLatest?.score)) return `${item.myLatest.score} 分`
+  return statusLabel(item.myLatest?.status)
 }
-
-const totalPoints = computed(() => form.value.criteria.reduce(
-  (sum, item) => sum + (Number(item.points) || 0), 0))
-
-const isTerminal = (status) => status === 'SUCCEEDED' || status === 'FAILED'
-
-function taskStatusLabel(status) {
-  return ({
-    PENDING: '待处理',
-    RUNNING: '批改中',
-    SUCCEEDED: '已完成',
-    FAILED: '失败',
-  })[status] || '—'
-}
-
-function verdictLabel(verdict) {
-  return ({ MET: '达成', PARTIAL: '部分达成', NOT_MET: '未达成' })[verdict] || verdict
-}
-
-function failureLabel(code) {
-  return ({
-    MODEL_UNAVAILABLE: '模型服务暂时不可用',
-    MODEL_OUTPUT_INVALID: '模型输出不符合评分格式',
-    MODEL_REQUEST_REJECTED: '模型服务拒绝请求，请联系教师检查配置',
-    ASSIGNMENT_INVALID: '作业评分依据无效',
-    SUBMISSION_MISSING: '关联作答不存在',
-    ASSIGNMENT_MISSING: '关联作业不存在',
-    GRADING_INTERNAL: '批改内部错误',
-    STALE_RUNNING: '执行超时已回收',
-  })[code] || code || '未知原因'
-}
-
-function message(exception) {
-  return exception instanceof ApiError ? exception.message : (exception?.message || '请求失败')
-}
-
-function stopPolling() {
-  if (pollTimer) {
-    clearTimeout(pollTimer)
-    pollTimer = null
-  }
-}
-
+function stopPolling() { clearTimeout(pollTimer); pollTimer = null }
 function cancelSelection() {
   selectionVersion += 1
   stopPolling()
-  taskRequest?.abort()
-  submissionsRequest?.abort()
+  failures = 0
+  for (const controller of requests) controller.abort()
+  requests.clear()
 }
-
+function controller() { const value = new AbortController(); requests.add(value); return value }
+function current(version, request) { return !disposed && version === selectionVersion && !request.signal.aborted }
+function mergeTask(response) {
+  const previous = task.value?.taskId === response.taskId ? task.value.teacherReview : null
+  task.value = { ...response, teacherReview: response.teacherReview || previous || selected.value?.myLatest?.teacherReview }
+}
+async function loadSubmissions() {
+  if (!selected.value) return
+  const version = selectionVersion
+  const request = controller()
+  submissionsLoading.value = true
+  try {
+    const items = await listTeacherSubmissions(selected.value.id, { signal: request.signal })
+    if (current(version, request)) submissions.value = items
+  } catch (exception) { if (current(version, request)) notifyError(exception) }
+  finally { requests.delete(request); if (current(version, request)) submissionsLoading.value = false }
+}
 function schedulePoll() {
-  if (disposed) return
   stopPolling()
-  const delay = Math.min(10000, 2000 * Math.pow(1.4, pollAttempts.value))
-  pollTimer = setTimeout(pollOnce, delay)
+  if (!disposed && task.value && !terminal(task.value.status)) {
+    pollTimer = setTimeout(readTask, Math.min(10000, 2000 * 1.4 ** failures))
+  }
 }
-
-async function pollOnce() {
+async function readTask() {
   pollTimer = null
-  if (disposed || !task.value?.taskId) return
+  const taskId = task.value?.taskId || selected.value?.myLatest?.taskId
+  if (!taskId) return
   const version = selectionVersion
-  const taskId = task.value.taskId
-  const controller = new AbortController()
-  taskRequest = controller
+  const request = controller()
   try {
-    const response = await getGradingTask(taskId, { signal: controller.signal })
-    if (disposed || version !== selectionVersion) return
-    task.value = response
-    pollAttempts.value = 0
-    if (isTerminal(task.value.status)) {
-      stopPolling()
-      await reloadQuiet()
-    } else {
-      schedulePoll()
+    const response = await getGradingTask(taskId, { signal: request.signal })
+    if (!current(version, request)) return
+    mergeTask(response)
+    failures = 0
+    const item = selected.value
+    if (item) item.myLatest = {
+      ...item.myLatest, taskId, status: response.status, submissionId: response.submissionId,
+      score: response.teacherReview?.score ?? response.result?.score,
+      teacherReview: response.teacherReview || item.myLatest?.teacherReview,
     }
+    if (terminal(response.status)) {
+      stopPolling()
+      if (response.status === 'FAILED' && !response.teacherReview) showFeedback('AI 批改未能完成，请等待教师批阅')
+    } else schedulePoll()
   } catch {
-    if (disposed || version !== selectionVersion || controller.signal.aborted) return
-    pollAttempts.value += 1
-    if (pollAttempts.value >= 8) {
-      stopPolling()
-      error.value = '状态查询失败，请刷新后重试。'
-    } else {
-      schedulePoll()
-    }
-  }
+    if (!current(version, request)) return
+    failures += 1
+    if (failures >= 8) showFeedback('结果查询失败，请点击刷新重试')
+    else schedulePoll()
+  } finally { requests.delete(request) }
 }
-
-function startPolling() {
-  stopPolling()
-  pollAttempts.value = 0
-  schedulePoll()
-}
-
-async function reloadQuiet() {
-  try {
-    const items = await listAssignments()
-    if (!disposed) assignments.value = items
-  } catch {
-    // 保留当前选择；轮询失败由状态卡片展示。
-  }
-}
-
-async function resumeFromLatest(item) {
-  cancelSelection()
-  task.value = null
-  const latest = item?.myLatest
-  if (!latest?.taskId) return
-  const version = selectionVersion
-  const controller = new AbortController()
-  taskRequest = controller
-  try {
-    const response = await getGradingTask(latest.taskId, { signal: controller.signal })
-    if (disposed || version !== selectionVersion) return
-    task.value = response
-    if (!isTerminal(task.value.status)) startPolling()
-  } catch (exception) {
-    if (disposed || version !== selectionVersion || controller.signal.aborted) return
-    error.value = message(exception)
-  }
-}
-
-async function loadAssignments() {
-  loading.value = true
-  error.value = ''
-  try {
-    const items = await listAssignments()
-    if (disposed) return
-    assignments.value = items
-    if (selectedId.value && !assignments.value.some((item) => item.id === selectedId.value)) {
-      selectedId.value = null
-      task.value = null
-      stopPolling()
-    }
-    if (!selectedId.value && assignments.value.length) selectedId.value = assignments.value[0].id
-    if (selected.value && !isTeacher.value) await resumeFromLatest(selected.value)
-  } catch (exception) {
-    error.value = message(exception)
-  } finally {
-    loading.value = false
-  }
-}
-
 async function selectAssignment(item) {
   cancelSelection()
   selectedId.value = item.id
   submitContent.value = ''
-  error.value = ''
-  notice.value = ''
   task.value = null
   submissions.value = []
-  stopPolling()
   if (isTeacher.value) await loadSubmissions()
-  else await resumeFromLatest(item)
+  else if (item.myLatest?.taskId) await readTask()
 }
-
-async function loadSubmissions() {
-  if (!isTeacher.value || !selected.value) return
-  submissionsLoading.value = true
-  const version = selectionVersion
-  const controller = new AbortController()
-  submissionsRequest = controller
+async function loadAssignments(preferredId = selectedId.value) {
+  loading.value = true
   try {
-    const items = await listTeacherSubmissions(selected.value.id, { signal: controller.signal })
-    if (disposed || version !== selectionVersion) return
-    submissions.value = items
-  } catch (exception) {
-    if (disposed || version !== selectionVersion || controller.signal.aborted) return
-    error.value = message(exception)
-  } finally {
-    if (!disposed && version === selectionVersion) submissionsLoading.value = false
-  }
+    const items = await listAssignments()
+    if (disposed) return
+    assignments.value = items
+    const item = items.find((entry) => entry.id === preferredId) || items[0]
+    if (item) await selectAssignment(item)
+  } catch (exception) { if (!disposed) notifyError(exception) }
+  finally { if (!disposed) loading.value = false }
 }
-
-function addCriterion() {
-  if (form.value.criteria.length < 10) form.value.criteria.push(newCriterion())
+async function openCreate() {
+  form.value = { title: '', prompt: '', maxScore: 100, rubricMaterialIds: [] }
+  createOpen.value = true
+  try { const items = await listMaterials(); if (!disposed) materials.value = items }
+  catch (exception) { if (!disposed) notifyError(exception) }
 }
-
-function removeCriterion(index) {
-  if (form.value.criteria.length > 1) form.value.criteria.splice(index, 1)
-}
-
 async function saveAssignment() {
-  createError.value = ''
-  const title = form.value.title.trim()
-  const prompt = form.value.prompt.trim()
-  if (!title || !prompt) {
-    createError.value = '标题和题目不能为空。'
-    return
-  }
-  const keys = new Set()
-  let total = 0
-  for (const criterion of form.value.criteria) {
-    if (!/^[A-Za-z0-9_-]{1,32}$/.test(criterion.key)) {
-      createError.value = '评分依据 key 只能使用字母、数字、下划线和短横线。'
-      return
-    }
-    if (keys.has(criterion.key)) {
-      createError.value = '评分依据 key 不能重复。'
-      return
-    }
-    keys.add(criterion.key)
-    const points = Number(criterion.points)
-    if (!Number.isInteger(points) || points < 1 || points > 100) {
-      createError.value = '每条评分依据分值应为 1～100 的整数。'
-      return
-    }
-    if (!criterion.description.trim()) {
-      createError.value = '评分依据说明不能为空。'
-      return
-    }
-    total += points
-  }
-  if (total > 100) {
-    createError.value = '评分依据总分不能超过 100。'
-    return
-  }
+  if (createBusy.value) return
+  const payload = { ...form.value, title: form.value.title.trim(), prompt: form.value.prompt.trim(), maxScore: Number(form.value.maxScore) }
+  if (!payload.title || !payload.prompt) return showFeedback('请填写作业标题和详细题目')
+  if (!Number.isInteger(payload.maxScore) || payload.maxScore < 1 || payload.maxScore > 100) return showFeedback('总分应为 1～100 的整数')
+  if (!payload.rubricMaterialIds.length || payload.rubricMaterialIds.length > 5) return showFeedback('请选择 1～5 个参考答案文件')
   createBusy.value = true
   try {
-    const created = await createAssignmentRequest({
-      title,
-      prompt,
-      criteria: form.value.criteria.map((item) => ({
-        key: item.key,
-        description: item.description.trim(),
-        points: Number(item.points),
-      })),
-    })
-    form.value = { title: '', prompt: '', criteria: [newCriterion()] }
+    const item = await createAssignment(payload)
+    if (disposed) return
     createOpen.value = false
-    notice.value = '作业已创建，本班学生现在可以提交。'
-    await loadAssignments()
-    cancelSelection()
-    selectedId.value = created.id
-    await loadSubmissions()
-  } catch (exception) {
-    createError.value = message(exception)
-  } finally {
-    createBusy.value = false
-  }
+    showFeedback('作业已创建', 'success')
+    await loadAssignments(item.id)
+  } catch (exception) { if (!disposed) notifyError(exception) }
+  finally { createBusy.value = false }
 }
-
 async function submit() {
-  if (!selected.value || submitting.value) return
+  if (submitting.value || submitted.value || !selected.value) return
   const content = submitContent.value.trim()
-  const length = [...content].length
-  if (length < 1 || length > 10000) {
-    error.value = '作答内容应为 1～10000 个字符。'
-    return
-  }
-  submitting.value = true
-  cancelSelection()
-  error.value = ''
-  notice.value = ''
-  const version = selectionVersion
+  if (!content || [...content].length > 10000) return showFeedback('请输入 1～10000 字的作答')
   const assignmentId = selected.value.id
+  const version = selectionVersion
+  submitting.value = true
   try {
-    const key = globalThis.crypto?.randomUUID?.()
-      || `ui-${Date.now()}-${Math.random().toString(36).slice(2)}`
-    const response = await submitAssignment(assignmentId, content, key)
+    const accepted = await submitAssignment(assignmentId, content)
     if (disposed || version !== selectionVersion) return
+    selected.value.myLatest = { ...accepted }
+    task.value = { ...accepted, submissionContent: content }
     submitContent.value = ''
-    task.value = {
-      taskId: response.taskId,
-      submissionId: response.submissionId,
-      assignmentId,
-      status: response.status,
-      attempts: 0,
-      maxAttempts: null,
-      result: null,
-    }
-    notice.value = '已提交，后台正在批改；离开页面后刷新仍可继续查看。'
-    startPolling()
-    await reloadQuiet()
-  } catch (exception) {
-    if (disposed || version !== selectionVersion) return
-    error.value = message(exception)
-    if (task.value && !isTerminal(task.value.status)) startPolling()
-  } finally {
-    submitting.value = false
-  }
+    showFeedback('作答已提交', 'success')
+    schedulePoll()
+  } catch (exception) { if (!disposed && version === selectionVersion) notifyError(exception) }
+  finally { if (!disposed) submitting.value = false }
 }
-
-onMounted(loadAssignments)
-onBeforeUnmount(() => {
-  disposed = true
-  cancelSelection()
-})
+function openReview(item) {
+  reviewTarget.value = item
+  reviewForm.value = { score: item.teacherReview?.score ?? item.aiResult?.score ?? '', comment: item.teacherReview?.comment || '' }
+}
+async function saveReview() {
+  if (reviewBusy.value || !reviewTarget.value) return
+  const score = reviewForm.value.score === '' ? NaN : Number(reviewForm.value.score)
+  const comment = reviewForm.value.comment.trim()
+  if (!Number.isInteger(score) || score < 0 || score > selected.value.maxScore) return showFeedback(`终评分数应在 0～${selected.value.maxScore} 之间`)
+  if (!comment || [...comment].length > 2000) return showFeedback('请填写 1～2000 字的终评评语')
+  reviewBusy.value = true
+  const id = selected.value.id
+  const version = selectionVersion
+  try {
+    await reviewSubmission(id, reviewTarget.value.submissionId, { score, comment })
+    if (disposed || version !== selectionVersion) return
+    reviewTarget.value = null
+    showFeedback('终评已保存', 'success')
+    await loadSubmissions()
+  } catch (exception) { if (!disposed) notifyError(exception) }
+  finally { reviewBusy.value = false }
+}
+async function refresh() { if (isTeacher.value) await loadSubmissions(); else await readTask() }
+// 批改任务终态后停止轮询，仅低频读取作业摘要，接收教师之后给出的终评。
+async function refreshReview() {
+  if (disposed) return
+  if (!isTeacher.value && selected.value?.myLatest && terminal(task.value?.status) && !effectiveReview.value && document.visibilityState !== 'hidden') {
+    const version = selectionVersion
+    const request = controller()
+    try {
+      const response = await getAssignment(selected.value.id, { signal: request.signal })
+      if (current(version, request)) {
+        selected.value.myLatest = response.myLatest
+        if (task.value && response.myLatest?.teacherReview) task.value.teacherReview = response.myLatest.teacherReview
+      }
+    } catch { /* 后台摘要刷新失败不干扰正在阅读的结果，用户仍可主动刷新。 */ }
+    finally { requests.delete(request) }
+  }
+  if (!disposed) reviewTimer = setTimeout(refreshReview, 15000)
+}
+onMounted(() => { loadAssignments(); reviewTimer = setTimeout(refreshReview, 15000) })
+onBeforeUnmount(() => { disposed = true; cancelSelection(); clearTimeout(reviewTimer) })
 </script>
 
 <template>
   <AppShell current="assignments">
-    <div class="assignments-page">
+    <div class="page-container assignment-page">
       <header class="page-heading">
-        <div>
-          <p class="eyebrow">CLASS 08 · ASYNC GRADING</p>
-          <h1>作业与批改</h1>
-          <p>教师提供题目与评分依据，学生提交文本作答，后台异步完成模型辅助分项判断和规则计分。</p>
-        </div>
-        <button v-if="isTeacher" class="button button--primary" type="button" @click="createOpen = !createOpen">
-          {{ createOpen ? '收起新建' : '新建作业' }}
-        </button>
+        <div><p class="breadcrumb">教学空间 <span>/</span> 作业批改</p><h1>{{ isTeacher ? '作业批改' : '我的作业' }}</h1><p>{{ isTeacher ? '发布作业，查看学生作答并完成批阅。' : '完成作业，查看老师的批阅与反馈。' }}</p></div>
+        <button v-if="isTeacher" type="button" class="button button--primary" @click="openCreate"><span aria-hidden="true">＋</span>新建作业</button>
       </header>
-
-      <p v-if="error" class="feedback feedback--error" role="alert">{{ error }}</p>
-      <p v-if="notice" class="feedback feedback--success">{{ notice }}</p>
-
-      <div class="assignments-layout">
-        <section class="assignment-panel assignments-list" aria-label="作业列表">
-          <h2>作业列表</h2>
-          <p v-if="loading" class="muted">正在加载…</p>
-          <p v-else-if="!assignments.length" class="muted">本班暂无作业。</p>
-          <button
-            v-for="item in assignments"
-            :key="item.id"
-            type="button"
-            class="assignment-item"
-            :class="{ 'assignment-item--active': item.id === selectedId }"
-            @click="selectAssignment(item)"
-          >
-            <strong>{{ item.title }}</strong>
-            <span>{{ item.criteria.length }} 条评分依据 · 满分 {{ item.maxScore }}</span>
-            <span v-if="item.myLatest" class="assignment-item-status">
-              我的任务：{{ taskStatusLabel(item.myLatest.status) }}
-              <template v-if="item.myLatest.score !== null && item.myLatest.score !== undefined">
-                · {{ item.myLatest.score }} 分
-              </template>
-            </span>
+      <div v-if="loading" class="assignment-empty content-card">正在加载作业…</div>
+      <div v-else-if="!assignments.length" class="assignment-empty content-card"><AppIcon name="book" /><h2>暂无作业</h2><p>{{ isTeacher ? '创建第一份作业，开始收集学生的学习反馈。' : '老师发布作业后，会显示在这里。' }}</p></div>
+      <div v-else class="assignment-layout">
+        <aside class="content-card assignment-list" aria-label="作业列表">
+          <div class="assignment-list-heading"><h2>作业列表</h2><span>{{ assignments.length }} 份</span></div>
+          <button v-for="item in assignments" :key="item.id" type="button" class="assignment-item" :class="{ active: selectedId === item.id }" :aria-pressed="selectedId === item.id" @click="selectAssignment(item)">
+            <span class="assignment-item-title">{{ item.title }}</span><span class="assignment-item-status">{{ listState(item) }}</span>
           </button>
-        </section>
-
-        <section class="assignments-main">
-          <div v-if="createOpen && isTeacher" class="assignment-panel create-panel">
-            <h2>新建作业</h2>
-            <label class="field">
-              <span>标题</span>
-              <input v-model="form.title" maxlength="120" placeholder="例如：勾股定理课堂练习" />
-            </label>
-            <label class="field">
-              <span>题目</span>
-              <textarea v-model="form.prompt" maxlength="4000" rows="4" placeholder="输入学生需要回答的问题"></textarea>
-            </label>
-            <div class="criteria-editor">
-              <div v-for="(criterion, index) in form.criteria" :key="criterion.key" class="criterion-row">
-                <input v-model="criterion.key" class="criterion-key" maxlength="32" aria-label="评分依据 key" />
-                <input v-model="criterion.description" maxlength="500" placeholder="评分依据说明" aria-label="评分依据说明" />
-                <input v-model.number="criterion.points" class="criterion-points" type="number" min="1" max="100" aria-label="分值" />
-                <button type="button" class="button button--soft" :disabled="form.criteria.length <= 1" @click="removeCriterion(index)">删除</button>
-              </div>
-              <div class="criteria-actions">
-                <button type="button" class="button button--soft" :disabled="form.criteria.length >= 10" @click="addCriterion">添加评分依据</button>
-                <span class="muted">总分 {{ totalPoints }} / 100</span>
-              </div>
+        </aside>
+        <main v-if="selected" class="assignment-main">
+          <article class="content-card assignment-detail">
+            <div class="assignment-detail-heading"><h2>{{ selected.title }}</h2><span class="assignment-total">满分 {{ selected.maxScore }} 分</span></div>
+            <p class="assignment-prompt">{{ selected.prompt }}</p>
+            <div v-if="isTeacher && selected.rubricSources?.length" class="rubric-sources"><span>参考答案</span><span v-for="source in selected.rubricSources" :key="source.id" class="rubric-file"><AppIcon name="book" />{{ source.title }}</span></div>
+          </article>
+          <section v-if="isTeacher" class="content-card submissions-panel">
+            <div class="section-heading"><h2>学生作答</h2><button class="button button--soft" type="button" :disabled="submissionsLoading" @click="loadSubmissions">刷新</button></div>
+            <p v-if="submissionsLoading" class="section-empty">正在加载作答…</p>
+            <p v-else-if="!submissions.length" class="section-empty">还没有学生提交作答。</p>
+            <div v-else class="submission-table-wrap"><table class="submissions-table">
+              <thead><tr><th>学生</th><th>作答</th><th>状态</th><th>得分</th><th><span class="sr-only">操作</span></th></tr></thead>
+              <tbody><tr v-for="item in submissions" :key="item.submissionId">
+                <td class="student-name">{{ item.studentUsername }}</td><td><p class="submission-excerpt">{{ item.content }}</p></td>
+                <td><span class="grading-status" :class="{ 'grading-status--done': item.teacherReview || item.status === 'SUCCEEDED' }">{{ item.teacherReview ? '已终评' : statusLabel(item.status) }}</span></td>
+                <td class="submission-score">{{ item.score ?? '—' }}<span v-if="item.score !== null && item.score !== undefined"> / {{ selected.maxScore }}</span></td>
+                <td><button type="button" class="button button--soft" :aria-label="`给 ${item.studentUsername} 改分`" @click="openReview(item)">改分</button></td>
+              </tr></tbody>
+            </table></div>
+          </section>
+          <section v-else-if="!submitted" class="content-card submit-panel">
+            <div class="section-heading"><h2>填写作答</h2></div>
+            <div class="answer-editor"><label class="sr-only" for="student-answer">作答内容</label><textarea id="student-answer" v-model="submitContent" rows="9" maxlength="10000" placeholder="在这里写下你的答案…"></textarea><div class="answer-actions"><span>每份作业仅可提交一次</span><button class="button button--primary" type="button" :disabled="submitting || !submitContent.trim()" @click="submit">{{ submitting ? '提交中…' : '提交' }}</button></div></div>
+          </section>
+          <section v-else class="content-card grading-result-panel">
+            <div class="section-heading"><h2>批改结果</h2><button class="button button--soft" type="button" @click="refresh">刷新结果</button></div>
+            <div class="result-body">
+              <section class="student-answer"><h3>我的作答</h3><p>{{ task?.submissionContent || '正在读取作答…' }}</p></section>
+              <section v-if="Number.isFinite(finalScore)" class="grade-feedback">
+                <div class="grade-overview"><div><span class="grade-source">{{ effectiveReview ? '教师终评' : 'AI 批改' }}</span><p class="grade-score">{{ finalScore }}<span> / {{ selected.maxScore }} 分</span></p></div><span class="grading-status grading-status--done">{{ effectiveReview ? '已终评' : '已批改' }}</span></div>
+                <h3>评语</h3><p class="grade-comment">{{ finalComment }}</p>
+              </section>
+              <div v-else class="grading-waiting"><span class="grading-waiting-dot"></span><p>{{ task?.status === 'FAILED' ? '等待教师批阅' : '已提交，正在批改中' }}</p></div>
             </div>
-            <p v-if="createError" class="feedback feedback--error" role="alert">{{ createError }}</p>
-            <div class="form-actions">
-              <button type="button" class="button button--secondary" @click="createOpen = false">取消</button>
-              <button type="button" class="button button--primary" :disabled="createBusy" @click="saveAssignment">
-                {{ createBusy ? '保存中…' : '保存作业' }}
-              </button>
-            </div>
-          </div>
-
-          <div v-if="!selected" class="assignment-panel empty-panel">
-            <p>选择左侧作业查看详情{{ isTeacher ? '和本班提交' : '并提交作答' }}。</p>
-          </div>
-
-          <template v-else>
-            <article class="assignment-panel assignment-detail">
-              <div class="detail-heading">
-                <div>
-                  <p class="eyebrow">ASSIGNMENT</p>
-                  <h2>{{ selected.title }}</h2>
-                </div>
-                <span class="score-badge">满分 {{ selected.maxScore }}</span>
-              </div>
-              <p class="assignment-prompt">{{ selected.prompt }}</p>
-              <ol class="rubric-list">
-                <li v-for="criterion in selected.criteria" :key="criterion.key">
-                  <span>{{ criterion.description }}</span>
-                  <strong>{{ criterion.points }} 分</strong>
-                </li>
-              </ol>
-            </article>
-
-            <section v-if="!isTeacher" class="assignment-panel submit-panel">
-              <h3>提交作答</h3>
-              <textarea
-                v-model="submitContent"
-                rows="6"
-                maxlength="10000"
-                placeholder="输入你的文本作答；提交后由后台异步批改。"
-              ></textarea>
-              <div class="submit-actions">
-                <span class="muted">{{ [...submitContent].length }} / 10000</span>
-                <button class="button button--primary" type="button" :disabled="submitting || !submitContent.trim()" @click="submit">
-                  {{ submitting ? '提交中…' : '提交并被批改' }}
-                </button>
-              </div>
-              <p class="muted">提交响应只返回任务标识，不等待模型；刷新页面后会从最新任务恢复查询。</p>
-            </section>
-
-            <section v-if="task" class="assignment-panel task-panel" aria-live="polite">
-              <div class="task-heading">
-                <h3>批改任务</h3>
-                <span class="task-status" :class="`task-status--${String(task.status || '').toLowerCase()}`">
-                  {{ taskStatusLabel(task.status) }}
-                </span>
-              </div>
-              <p class="muted task-meta">
-                任务 {{ task.taskId }}
-                <template v-if="task.attempts !== undefined">· 已执行 {{ task.attempts }} 次</template>
-                <template v-if="task.maxAttempts"> / 上限 {{ task.maxAttempts }}</template>
-              </p>
-              <p v-if="task.status === 'FAILED'" class="feedback feedback--error">
-                批改失败：{{ failureLabel(task.failureCode) }}。本次不会伪造分数，可稍后重试或联系教师。
-              </p>
-              <div v-if="task.result" class="grading-result">
-                <p class="result-score">{{ task.result.score }}<span> / {{ task.result.maxScore }}</span></p>
-                <p class="result-note">模型辅助分项判断 + 规则计分；教师复核未纳入本次。</p>
-                <ul class="result-criteria">
-                  <li v-for="criterion in task.result.criteria" :key="criterion.key">
-                    <div class="criterion-heading">
-                      <strong>{{ criterion.description }}</strong>
-                      <span>{{ criterion.awardedPoints }} / {{ criterion.points }} 分 · {{ verdictLabel(criterion.verdict) }}</span>
-                    </div>
-                    <p>{{ criterion.explanation }}</p>
-                    <p class="criterion-evidence">依据：{{ criterion.evidence }}</p>
-                  </li>
-                </ul>
-                <p v-if="task.result.rationale" class="result-rationale">{{ task.result.rationale }}</p>
-              </div>
-            </section>
-
-            <section v-if="isTeacher" class="assignment-panel submissions-panel">
-              <h3>本班提交与结果</h3>
-              <p class="muted">按学生和版本排序，最多显示 200 条提交。</p>
-              <p v-if="submissionsLoading" class="muted">正在加载…</p>
-              <p v-else-if="!submissions.length" class="muted">本班还没有提交。</p>
-              <div v-else class="table-scroll">
-                <table class="submissions-table">
-                  <thead>
-                    <tr><th>学生</th><th>版本</th><th>状态</th><th>得分</th><th>作答</th></tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="item in submissions" :key="item.submissionId">
-                      <td>{{ item.studentUsername }}</td>
-                      <td>v{{ item.version }}</td>
-                      <td>{{ taskStatusLabel(item.status) }}</td>
-                      <td>
-                        <template v-if="item.score !== null && item.score !== undefined">{{ item.score }} / {{ item.maxScore }}</template>
-                        <template v-else>—</template>
-                      </td>
-                      <td class="answer-cell">{{ item.content }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          </template>
-        </section>
+          </section>
+        </main>
       </div>
     </div>
+    <BaseModal v-if="createOpen" title="新建作业" wide @close="!createBusy && (createOpen = false)">
+      <form id="assignment-create" class="config-form assignment-form" novalidate @submit.prevent="saveAssignment">
+        <label class="field"><span>作业标题</span><input v-model="form.title" maxlength="120" placeholder="例如：勾股定理课堂练习" /></label>
+        <label class="field"><span>详细题目</span><textarea v-model="form.prompt" rows="5" maxlength="4000" placeholder="写清题目、作答要求及必要条件"></textarea></label>
+        <label class="field assignment-points-field"><span>总分</span><input v-model="form.maxScore" type="number" min="1" max="100" step="1" /></label>
+        <fieldset class="rubric-picker"><legend>参考答案文件</legend><p>选择本班已解析的参考答案文件，最多 5 个；AI 将结合题目综合评分。</p>
+          <div v-if="rubricFiles.length" class="rubric-options"><label v-for="material in rubricFiles" :key="material.id" class="rubric-option" :class="{ selected: form.rubricMaterialIds.includes(material.id) }"><input v-model="form.rubricMaterialIds" type="checkbox" :value="material.id" /><AppIcon name="book" /><span>{{ material.title }}</span></label></div>
+          <p v-else class="rubric-picker-empty">暂无可用文件，请先到<a href="/materials">讲义与检索</a>上传参考答案。</p>
+        </fieldset>
+      </form>
+      <template #footer><button class="button button--secondary" type="button" :disabled="createBusy" @click="createOpen = false">取消</button><button class="button button--primary" type="submit" form="assignment-create" :disabled="createBusy">{{ createBusy ? '正在创建…' : '创建作业' }}</button></template>
+    </BaseModal>
+    <BaseModal v-if="reviewTarget" title="批阅与终评" wide @close="!reviewBusy && (reviewTarget = null)">
+      <div class="review-student"><strong>{{ reviewTarget.studentUsername }}</strong><span>{{ selected.title }}</span></div>
+      <section class="review-answer"><h3>学生作答</h3><p>{{ reviewTarget.content }}</p></section>
+      <section class="review-ai"><div class="review-ai-heading"><h3>AI 批改</h3><strong>{{ reviewTarget.aiResult ? `${reviewTarget.aiResult.score} / ${selected.maxScore} 分` : '暂无结果' }}</strong></div>
+        <template v-if="reviewTarget.aiResult"><p>{{ reviewTarget.aiResult.rationale }}</p><details v-if="reviewTarget.aiResult.criteria?.length"><summary>查看原评分明细</summary><ul><li v-for="item in reviewTarget.aiResult.criteria" :key="item.key"><strong>{{ item.description }} · {{ item.awardedPoints }} / {{ item.points }} 分</strong><p>{{ item.explanation }}</p><p>作答依据：{{ item.evidence }}</p></li></ul></details></template>
+        <p v-else>可以直接填写教师终评。</p>
+      </section>
+      <form id="submission-review" class="config-form assignment-form review-form" novalidate @submit.prevent="saveReview">
+        <label class="field assignment-points-field"><span>终评分数</span><input v-model="reviewForm.score" type="number" min="0" :max="selected.maxScore" step="1" /></label>
+        <label class="field"><span>终评评语</span><textarea v-model="reviewForm.comment" rows="4" maxlength="2000" placeholder="写下给学生的终评意见"></textarea></label>
+      </form>
+      <template #footer><button class="button button--secondary" type="button" :disabled="reviewBusy" @click="reviewTarget = null">取消</button><button class="button button--primary" type="submit" form="submission-review" :disabled="reviewBusy">{{ reviewBusy ? '保存中…' : '保存终评' }}</button></template>
+    </BaseModal>
   </AppShell>
 </template>
 
 <style scoped>
-.assignments-page { display: flex; flex-direction: column; }
-.assignments-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 20px; align-items: start; }
-.assignments-main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-.assignment-panel { padding: 20px; background: #fff; border: 1px solid #e4e7ec; border-radius: 14px; box-shadow: 0 1px 2px rgba(16, 24, 40, .04); }
-.assignments-list { display: flex; flex-direction: column; gap: 10px; }
-.assignments-list h2, .assignment-panel h2, .assignment-panel h3 { margin: 0 0 12px; color: var(--ink-900); }
-.assignment-item { display: flex; flex-direction: column; gap: 4px; padding: 12px; text-align: left; color: var(--ink-700); background: #fff; border: 1px solid #e4e7ec; border-radius: 10px; cursor: pointer; }
-.assignment-item:hover { border-color: #d9aaac; background: var(--brand-50); }
-.assignment-item--active { border-color: var(--brand-700); background: var(--brand-50); }
-.assignment-item strong { color: var(--ink-900); font-size: 14px; }
-.assignment-item span { font-size: 12px; color: var(--ink-500); }
-.assignment-item-status { color: var(--brand-700) !important; }
-.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; font-size: 13px; color: var(--ink-700); }
-.field input, .field textarea, .submit-panel textarea { width: 100%; padding: 9px 11px; font: inherit; color: var(--ink-900); background: #fff; border: 1px solid #dcdfe4; border-radius: 8px; }
-.criteria-editor { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
-.criterion-row { display: grid; grid-template-columns: 90px minmax(0, 1fr) 76px auto; gap: 8px; }
-.criterion-row input { min-width: 0; padding: 8px 10px; border: 1px solid #dcdfe4; border-radius: 8px; }
-.criteria-actions, .form-actions, .submit-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.form-actions { margin-top: 16px; }
-.detail-heading, .task-heading, .criterion-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-.score-badge { padding: 5px 10px; color: var(--brand-700); background: var(--brand-50); border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
-.assignment-prompt { margin: 0 0 16px; color: var(--ink-700); white-space: pre-wrap; line-height: 1.7; }
-.rubric-list { margin: 0; padding-left: 20px; color: var(--ink-700); }
-.rubric-list li { display: flex; justify-content: space-between; gap: 16px; padding: 6px 0; }
-.submit-panel textarea { min-height: 140px; resize: vertical; }
-.submit-actions { margin-top: 10px; }
-.task-status { padding: 4px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; background: #f2f4f7; color: var(--ink-600); }
-.task-status--pending, .task-status--running { color: #8a6100; background: #fff4d6; }
-.task-status--succeeded { color: var(--success); background: var(--success-bg); }
-.task-status--failed { color: #9d252c; background: var(--danger-bg); }
-.task-meta { font-size: 12px; word-break: break-all; }
-.grading-result { margin-top: 16px; }
-.result-score { margin: 0; color: var(--brand-700); font-size: 42px; font-weight: 800; letter-spacing: -.04em; }
-.result-score span { color: var(--ink-500); font-size: 20px; font-weight: 600; }
-.result-note { margin: 2px 0 16px; color: var(--ink-500); font-size: 12px; }
-.result-criteria { display: flex; flex-direction: column; gap: 12px; margin: 0; padding: 0; list-style: none; }
-.result-criteria li { padding: 12px; background: #fafbfc; border: 1px solid #edf0f3; border-radius: 10px; }
-.result-criteria p { margin: 6px 0 0; color: var(--ink-700); font-size: 13px; line-height: 1.6; }
-.criterion-heading span { color: var(--ink-500); font-size: 12px; white-space: nowrap; }
-.criterion-evidence { color: var(--ink-500) !important; }
-.result-rationale { margin-top: 16px; padding-top: 12px; border-top: 1px solid #edf0f3; color: var(--ink-700); line-height: 1.7; }
-.table-scroll { overflow-x: auto; }
-.submissions-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.submissions-table th, .submissions-table td { padding: 9px 10px; text-align: left; border-bottom: 1px solid #edf0f3; vertical-align: top; }
-.submissions-table th { color: var(--ink-500); font-weight: 600; white-space: nowrap; }
-.answer-cell { max-width: 360px; color: var(--ink-700); white-space: pre-wrap; word-break: break-word; }
-.muted { color: var(--ink-500); font-size: 13px; }
-.empty-panel { color: var(--ink-500); }
-@media (max-width: 960px) {
-  .assignments-layout { grid-template-columns: 1fr; }
-  .criterion-row { grid-template-columns: 1fr; }
-}
+.assignment-layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); align-items: start; gap: 24px; }
+.assignment-main { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 24px; }
+.assignment-list { padding: 8px; overflow: hidden; }
+.assignment-list-heading { display: flex; justify-content: space-between; align-items: center; padding: 14px 12px 20px; }
+.assignment-list-heading h2 { margin: 0; font-size: 17px; }
+.assignment-list-heading > span { color: var(--ink-500); font-size: 14px; }
+.assignment-item { display: flex; flex-direction: column; align-items: start; gap: 10px; width: 100%; padding: 16px; text-align: left; border: 1px solid transparent; border-radius: 10px; background: #fff; cursor: pointer; }
+.assignment-item + .assignment-item { margin-top: 4px; }
+.assignment-item:hover { background: var(--canvas); }
+.assignment-item.active { background: var(--brand-50); border-color: #eed2d3; }
+.assignment-item-title { color: var(--ink-900); font-size: 15px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
+.assignment-item-status { color: var(--ink-500); font-size: 13px; }
+.assignment-item.active .assignment-item-status { color: var(--brand-700); }
+.assignment-detail { padding: 24px; }
+.assignment-detail-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.assignment-detail h2 { margin: 0; font-size: 21px; line-height: 1.5; overflow-wrap: anywhere; }
+.assignment-total { padding: 7px 12px; border-radius: 8px; flex-shrink: 0; color: var(--brand-700); background: var(--brand-50); font-size: 14px; }
+.assignment-prompt { margin: 22px 0 0; font-size: 15px; line-height: 1.9; white-space: pre-wrap; overflow-wrap: anywhere; }
+.rubric-sources { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 14px; color: var(--ink-500); }
+.rubric-file { display: inline-flex; align-items: center; gap: 7px; color: var(--ink-700); background: var(--canvas); padding: 7px 10px; border-radius: 8px; overflow-wrap: anywhere; }
+.rubric-file svg { width: 16px; height: 16px; flex-shrink: 0; }
+.section-heading { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; border-bottom: 1px solid var(--line); gap: 12px; }
+.section-heading h2 { margin: 0; font-size: 18px; }
+.section-empty { padding: 40px 24px; margin: 0; text-align: center; color: var(--ink-500); font-size: 15px; }
+.submission-table-wrap { position: relative; overflow-x: auto; }
+.submissions-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.submissions-table th { color: var(--ink-500); background: #fafbfc; text-align: left; font-weight: 500; }
+.submissions-table td, .submissions-table th { padding: 18px 16px; border-bottom: 1px solid var(--line); }
+.submissions-table tr:last-child td { border-bottom: 0; }
+.submissions-table th:first-child, .submissions-table td:first-child { padding-left: 24px; }
+.student-name { font-weight: 600; white-space: nowrap; }
+.submission-excerpt { margin: 0; min-width: 140px; line-height: 1.7; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; overflow-wrap: anywhere; }
+.submission-score { font-weight: 650; white-space: nowrap; }
+.submission-score > span { color: var(--ink-500); font-size: 13px; font-weight: 400; }
+.grading-status { display: inline-block; padding: 5px 9px; border-radius: 6px; color: var(--warning); background: #fbf3e4; white-space: nowrap; font-size: 13px; }
+.grading-status--done { color: var(--success); background: var(--success-bg); }
+.answer-editor { padding: 24px; }
+.answer-editor textarea { width: 100%; min-height: 220px; padding: 16px; border: 1px solid #dce0e5; border-radius: 10px; line-height: 1.8; font: inherit; resize: vertical; }
+.answer-editor textarea:focus { outline: 2px solid var(--brand-100); border-color: var(--brand-700); }
+.answer-actions { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-top: 18px; }
+.answer-actions > span { color: var(--ink-500); font-size: 14px; }
+.result-body { padding: 24px; }
+.student-answer h3, .grade-feedback h3, .review-answer h3, .review-ai h3 { font-size: 15px; margin: 0 0 12px; }
+.student-answer > p, .review-answer > p { padding: 16px; margin: 0; background: var(--canvas); border-radius: 10px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 1.8; }
+.grade-feedback { margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--line); }
+.grade-overview { display: flex; align-items: start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.grade-source { font-size: 14px; color: var(--ink-500); }
+.grade-score { color: var(--brand-700); font-size: 36px; font-weight: 700; margin: 8px 0 0; line-height: 1.2; }
+.grade-score > span { color: var(--ink-500); font-size: 15px; font-weight: 400; }
+.grade-comment { margin: 0; font-size: 15px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.9; }
+.grading-waiting { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 24px; padding: 24px 0; color: var(--ink-500); }
+.grading-waiting-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--brand-700); }
+.assignment-form { display: grid; gap: 20px; }
+.assignment-form .field { margin: 0; gap: 8px; font-size: 14px; font-weight: 600; }
+.assignment-form input[type="number"] { width: 100%; padding: 10px 12px; color: #32363c; background: #fff; border: 1px solid #d9dce1; border-radius: 8px; outline: 0; }
+.assignment-form textarea { resize: vertical; line-height: 1.7; }
+.assignment-points-field { max-width: 180px; }
+.rubric-picker { margin: 0; padding: 0; border: 0; min-width: 0; }
+.rubric-picker legend { font-size: 14px; font-weight: 600; }
+.rubric-picker > p { margin: 8px 0 14px; font-size: 14px; color: var(--ink-500); }
+.rubric-options { display: grid; gap: 10px; max-height: 230px; overflow-y: auto; }
+.rubric-option { display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.rubric-option.selected { border-color: #d9aaac; background: var(--brand-50); }
+.rubric-option input { accent-color: var(--brand-700); }
+.rubric-option svg { width: 19px; height: 19px; color: var(--ink-500); flex-shrink: 0; }
+.rubric-option span { font-size: 14px; overflow-wrap: anywhere; }
+.rubric-picker-empty { padding: 18px; background: var(--canvas); border-radius: 10px; }
+.rubric-picker-empty a { color: var(--brand-700); margin: 0 4px; }
+.review-student { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; font-size: 15px; }
+.review-student span { color: var(--ink-500); }
+.review-answer { margin-bottom: 22px; }
+.review-ai { padding: 18px; background: #faf8f5; border: 1px solid #f0e9df; border-radius: 10px; }
+.review-ai-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.review-ai-heading h3 { margin: 0; }
+.review-ai > p, .review-ai li p { margin: 12px 0 0; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
+.review-ai summary { margin-top: 16px; cursor: pointer; font-size: 14px; }
+.review-ai ul { padding-left: 20px; }
+.review-ai li { margin-top: 16px; font-size: 14px; }
+.review-form { border-top: 1px solid var(--line); padding-top: 24px; margin-top: 24px; }
+.assignment-empty { display: grid; justify-items: center; gap: 14px; padding: 64px 24px; color: var(--ink-500); text-align: center; }
+.assignment-empty > svg { width: 40px; height: 40px; color: #b9bec6; }
+.assignment-empty h2 { color: var(--ink-700); margin: 0; font-size: 19px; }
+.assignment-empty p { margin: 0; font-size: 15px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+@media (max-width: 1000px) { .assignment-layout { grid-template-columns: 220px minmax(0, 1fr); gap: 18px; } .assignment-main { gap: 18px; } }
+@media (max-width: 760px) { .assignment-layout { grid-template-columns: 1fr; } .assignment-list { max-height: 260px; overflow-y: auto; } .assignment-item { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; } .assignment-item-status { flex-shrink: 0; } .assignment-list-heading { padding-bottom: 12px; } .assignment-detail, .result-body, .answer-editor { padding: 20px; } .submissions-table td, .submissions-table th { padding: 14px 12px; } }
+@media (max-width: 470px) { .assignment-detail-heading { flex-direction: column; gap: 12px; } .section-heading { padding: 18px; } .answer-actions { align-items: end; } .answer-actions > span { max-width: 150px; line-height: 1.6; } .review-student { align-items: start; flex-direction: column; gap: 6px; } }
 </style>

@@ -31,6 +31,10 @@ public class Assignment {
 
     @Column(name = "max_score")
     private Integer maxScore;
+    @Column(name = "rubric_source_json", columnDefinition = "JSON")
+    private String rubricSourceJson;
+    @Column(name = "rubric_text", columnDefinition = "MEDIUMTEXT")
+    private String rubricText;
 
     @Column(nullable = false)
     private boolean gradable = false;
@@ -82,6 +86,12 @@ public class Assignment {
     public String getPromptText() { return promptText; }
     public String getRubricJson() { return rubricJson; }
     public Integer getMaxScore() { return maxScore; }
+    public String getRubricSourceJson() { return rubricSourceJson; }
+    public String getRubricText() { return rubricText; }
+    public void setRubricSources(String sourceJson, String text) {
+        this.rubricSourceJson = sourceJson;
+        this.rubricText = text;
+    }
     public boolean isGradable() { return gradable; }
     public Long getCreatedBy() { return createdBy; }
     public Instant getCreatedAt() { return createdAt; }

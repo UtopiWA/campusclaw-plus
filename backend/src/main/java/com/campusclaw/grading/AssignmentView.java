@@ -12,7 +12,8 @@ public record AssignmentView(
         List<RubricCriterion> criteria,
         int maxScore,
         Instant createdAt,
-        MyLatestSubmission myLatest) {
+        MyLatestSubmission myLatest,
+        List<RubricSourceView> rubricSources) {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record MyLatestSubmission(
@@ -21,6 +22,7 @@ public record AssignmentView(
             String taskId,
             String status,
             Integer score,
-            Integer maxScore) {
+            Integer maxScore,
+            TeacherReviewView teacherReview) {
     }
 }

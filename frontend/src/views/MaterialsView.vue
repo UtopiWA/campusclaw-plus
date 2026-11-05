@@ -1,4 +1,5 @@
 <script setup>
+import { feedbackRef } from '../services/feedback.js'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import AppIcon from '../components/AppIcon.vue'
@@ -12,19 +13,19 @@ const materials = ref([])
 const selectedFile = ref(null)
 const fileInput = ref(null)
 const uploadBusy = ref(false)
-const uploadError = ref('')
+const uploadError = feedbackRef('error')
 const renameBusy = ref(false)
 const deleteBusy = ref(false)
 const rebuildBusy = ref(false)
 const refreshBusy = ref(false)
 const retryBusyIds = ref(new Set())
-const error = ref('')
-const notice = ref('')
+const error = feedbackRef('error')
+const notice = feedbackRef('success')
 const query = ref('')
 const retrievalQuery = ref('')
 const retrievalMode = ref('hybrid')
 const retrievalBusy = ref(false)
-const retrievalError = ref('')
+const retrievalError = feedbackRef('error')
 const retrievalResult = ref(null)
 const uploadOpen = ref(false)
 const dragActive = ref(false)
@@ -165,7 +166,7 @@ async function upload() {
     uploadOpen.value = false
     selectedFile.value = null
     if (fileInput.value) fileInput.value.value = ''
-    notice.value = '讲义已上传，系统正在后台解析并建立索引。'
+    notice.value = '讲义已上传，正在处理。'
     pollDelay = 1500
     pollStartedAt = Date.now()
     await loadMaterials()
@@ -406,7 +407,7 @@ onBeforeUnmount(() => {
         <div>
           <p class="breadcrumb">知识库 <span>/</span> 讲义与检索</p>
           <h1>讲义与检索</h1>
-          <p>{{ isTeacher ? '管理本班讲义，并直接核对已建立索引的知识片段。' : '查看、下载并检索教师为本班准备的教学材料。' }}</p>
+          <p>{{ isTeacher ? '上传和管理讲义，查找课程内容。' : '查看和下载讲义，查找课程内容。' }}</p>
         </div>
         <button v-if="isTeacher" class="button button--primary button--large" type="button" @click="openUpload">
           <AppIcon name="upload" />上传讲义
@@ -415,17 +416,16 @@ onBeforeUnmount(() => {
 
       <section class="content-card lecture-search-card" aria-labelledby="lecture-search-title">
         <div class="lecture-search-heading">
-          <div><h2 id="lecture-search-title">检索本班讲义</h2><p>直接查找原始知识片段，不经过智能体生成回答。</p></div>
-          <span class="class-scope-tag"><AppIcon name="shield" :size="14" />仅 {{ authState.user?.className }}</span>
+          <div><h2 id="lecture-search-title">检索讲义</h2><p>输入关键词或问题，查找相关内容。</p></div>
         </div>
         <form class="lecture-search-form" @submit.prevent="searchMaterials">
           <label class="lecture-search-input"><AppIcon name="search" /><span class="sr-only">检索讲义内容</span><input v-model="retrievalQuery" type="search" maxlength="1000" placeholder="输入知识点、题目或讲义原文关键词" /></label>
           <label class="lecture-search-mode"><span class="sr-only">检索模式</span><select v-model="retrievalMode" aria-label="检索模式"><option value="hybrid">混合检索</option><option value="keyword">关键词检索</option><option value="vector">语义检索</option></select></label>
           <button class="button button--primary" type="submit" :disabled="retrievalBusy || !retrievalQuery.trim()">{{ retrievalBusy ? '检索中…' : '开始检索' }}</button>
         </form>
-        <p v-if="retrievalError" class="feedback feedback--error lecture-search-error" role="alert">{{ retrievalError }}</p>
+
         <div v-if="retrievalResult" class="lecture-results" aria-live="polite">
-          <div class="lecture-results-summary"><strong>检索结果</strong><span>{{ retrievalResult.hits?.length ? `找到 ${retrievalResult.hits.length} 条依据` : '没有找到可用依据' }} · {{ retrievalResult.mode }}</span></div>
+          <div class="lecture-results-summary"><strong>检索结果</strong><span>{{ retrievalResult.hits?.length ? `找到 ${retrievalResult.hits.length} 条依据` : '没有找到可用依据' }}</span></div>
           <ol v-if="retrievalResult.hits?.length" class="chat-hit-list">
             <li v-for="(hit, hitIndex) in retrievalResult.hits" :key="hit.chunkId" class="chat-hit">
               <span class="chat-hit-number">{{ hitIndex + 1 }}</span>
@@ -450,18 +450,14 @@ onBeforeUnmount(() => {
           <span class="summary-icon summary-icon--gold"><AppIcon name="file" /></span>
           <div><strong>{{ fileCount }}</strong><span>可查看文件</span></div>
         </article>
-        <article class="summary-card">
-          <span class="summary-icon summary-icon--blue"><AppIcon name="shield" /></span>
-          <div><strong>{{ isTeacher ? '管理' : '只读' }}</strong><span>{{ authState.user?.className }}权限</span></div>
-        </article>
       </section>
 
-      <p v-if="error" class="feedback feedback--error" role="alert">{{ error }}</p>
-      <p v-if="notice" class="feedback feedback--success" role="status">{{ notice }}</p>
+
+
 
       <section class="content-card materials-card">
         <div class="content-card-header">
-          <div><h2>本班讲义</h2><p>共 {{ materials.length }} 份，仅展示当前班级内容</p></div>
+          <div><h2>本班讲义</h2><p>共 {{ materials.length }} 份</p></div>
           <div class="material-list-tools">
             <label class="search-box">
               <AppIcon name="search" /><span class="sr-only">搜索讲义</span>
@@ -513,17 +509,17 @@ onBeforeUnmount(() => {
     </div>
   </AppShell>
 
-  <BaseModal v-if="uploadOpen" title="上传讲义并入库" description="文件保存后将在后台解析正文并生成本班知识片段。" @close="closeUpload">
+  <BaseModal v-if="uploadOpen" title="上传讲义" description="上传后会自动处理，完成后即可检索。" @close="closeUpload">
     <label class="file-drop" :class="{ 'file-drop--active': dragActive, 'file-drop--selected': selectedFile }" @dragenter.prevent="dragActive = true" @dragover.prevent="dragActive = true" @dragleave.prevent="dragActive = false" @drop.prevent="dropFile">
       <input ref="fileInput" type="file" accept=".txt,.md,text/plain,text/markdown" @change="chooseFile" />
       <span class="file-drop-icon"><AppIcon :name="selectedFile ? 'file' : 'upload'" :size="26" /></span>
       <strong>{{ selectedFile?.name || '点击选择，或将文件拖到这里' }}</strong>
       <span>{{ selectedFile ? formatSize(selectedFile.size) : '支持 UTF-8 编码的 .txt、.md，最大 2 MiB' }}</span>
     </label>
-    <p v-if="uploadError" class="feedback feedback--error upload-error" role="alert">{{ uploadError }}</p>
+
     <template #footer>
       <button class="button button--secondary" type="button" :disabled="uploadBusy" @click="closeUpload">取消</button>
-      <button class="button button--primary" type="button" :disabled="!selectedFile || uploadBusy" @click="upload">{{ uploadBusy ? '正在上传…' : '上传并后台解析' }}</button>
+      <button class="button button--primary" type="button" :disabled="!selectedFile || uploadBusy" @click="upload">{{ uploadBusy ? '正在上传…' : '上传' }}</button>
     </template>
   </BaseModal>
 
