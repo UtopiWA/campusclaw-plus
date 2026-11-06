@@ -1,6 +1,7 @@
 .env
 .env.*
 !.env.example
+/.venv-review/
 frontend/node_modules/
 frontend/dist/
 frontend/coverage/

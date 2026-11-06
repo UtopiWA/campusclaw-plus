@@ -17,6 +17,18 @@ SPEC.loader.exec_module(CONFIG)
 
 
 class TeamApiConfigTest(unittest.TestCase):
+    def test_fresh_template_supplies_team_database_and_host_ports(self):
+        template = (Path(__file__).resolve().parents[2] / ".env.example").read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as folder:
+            env_file = Path(folder) / "fresh.env"
+            env_file.write_text(template + "\nMYSQL_PASSWORD=synthetic-db\n"
+                                "MCP_AUTH_TOKEN=synthetic-token\nDEMO_SEED_PASSWORD=synthetic-login\n", encoding="utf-8")
+            with patch.dict(os.environ, {"APITEST_ENV_FILE": str(env_file)}, clear=True):
+                config = CONFIG.TestConfig.load()
+            self.assertEqual("campusclaw_plus", config.db_name)
+            self.assertEqual("http://127.0.0.1:18080", config.base_url)
+            self.assertEqual(13306, config.db_port)
+
     def test_selected_config_supplies_team_ports_and_credentials(self):
         with tempfile.TemporaryDirectory() as folder:
             env_file = Path(folder) / "team.env"

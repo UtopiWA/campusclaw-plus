@@ -1,6 +1,6 @@
 # Class08 异步作业批改验收记录
 
-状态：**功能已提交至 `45b2f7a`，用户初验通过。本轮安全工具/文档未提交；另一成员复现暂缓，待本轮工作完成后交付。两个 change 保持活动，未同步归档，标签未授权。** 第 0～11 节保留各轮实际记录，第 12 节为最新安全自查；历史告警不覆盖最新复扫结论，代理不代签成员。
+状态：**功能与安全工具已提交至 `e7507b6`，用户初验通过。本轮首次部署模板/验收依赖/说明未提交；另一成员复现暂缓，待本轮工作完成后交付。两个 change 保持活动，未同步归档，标签未授权。** 第 0～11 节保留各轮实际记录，第 12 节为最新安全自查；历史告警不覆盖最新复扫结论，代理不代签成员。
 
 - 关联 change：[2026-11-03-add-async-assignment-grading](../../openspec/changes/2026-11-03-add-async-assignment-grading/proposal.md)
 - 能力规约：[assignment-grading](../../openspec/changes/2026-11-03-add-async-assignment-grading/specs/assignment-grading/spec.md)、[reliable-task-execution](../../openspec/changes/2026-11-03-add-async-assignment-grading/specs/reliable-task-execution/spec.md)、[security-precheck](../../openspec/changes/2026-11-03-add-async-assignment-grading/specs/security-precheck/spec.md)
@@ -324,3 +324,16 @@ Docker Desktop 数据盘已核验在 D 盘，不迁移、不重启整个引擎�
 本轮未重跑整个后端/前端套件、全部 API、DLQ/超时回收、OWASP 或选做 SEC-08，未同步主规格、归档、提交、推送或打标签。既有对应功能结果仍见第 8～11 节。最终成员复核与交付顺序见[交接](handoff.md)。
 
 交接文档整理：已检查当前可入库的 102 份文档（含归档和新增文件），私有配置凭据精确比对、敏感格式/本机路径检查及仓库内链接检查均未发现问题。Docker 不可用，文档密钥扫描改用经官方发布校验和核验的 Gitleaks v8.24.3 便携版，退出 0、零命中。此次仅调整文档和复核范围，没有重跑业务测试或依赖审计；原始输出留在忽略目录。
+
+## 13. 首次 Docker 复现准备（2026-11-06）
+
+候选：已提交 `e7507b6` 加本轮模板与文档；不替代另一成员复现。
+
+- 修正 `.env.example`：显式配置 `campusclaw_plus` 和三个宿主端口，解决新成员自查回退到旧库名/3306的问题。Compose 兼容默认、现有私有配置与业务代码未改。
+- README/交接补齐 Docker Desktop、模型配置、种子初始化后停用、独立 Python 环境及清理。只安装接口验收依赖，禁用 pip 缓存和源码旁 Python 缓存；容器构建无需本机 Java/Node。
+- 模板回归先实际复现错误，再修正通过；`python -B -m unittest discover -s scripts/tests` 共 **34 项通过**，Ruff 通过。
+- Python 验收改为 `PyMySQL[rsa]`，补齐 MySQL 8 完整认证依赖。独立临时环境实际安装 PyMySQL 1.2.3 / cryptography 50.0.2，RSA 能力检查通过；`pip_audit -r apitest/requirements.txt` 实际审计4项、零告警，临时虚拟环境已删除。未降级数据库认证插件；此能力检查不等同于新的数据库连接验收。
+- 用随机合成凭据执行 `docker compose --env-file <临时配置> config --format json`：七服务、团队库、三个回环端口、四个隔离卷、Web/worker 凭据一致和种子开关均通过，临时配置已自动删除。未输出配置全文或真实凭据。
+- 本次 Engine 不可连接，**未重新构建或冷启动、未调用模型、未执行实际容器撤除**；已有冷启动结果见第12节，不将配置解析当作新的运行验收。
+
+清理区分脚本自动回收、保留部署和一次性环境撤除。手工作业/工具审计及失败登记不假称自动清空；共享镜像缓存不执行全局 prune。具体命令见[交接第5节](handoff.md#5-验收后清理)。本轮未提交、归档或代签。

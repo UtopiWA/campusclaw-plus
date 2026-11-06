@@ -43,6 +43,8 @@ python scripts/check_security.py --env-file .env.team
 | Java OSV | 124/124 查询完成，所有严重级别零告警（high/critical 各 0） |
 | OWASP/NVD 补充 | 未执行，不是默认入口必选项 |
 
+后续首次部署检查补齐了 `PyMySQL[rsa]` 验收依赖；独立安装/RSA能力检查和更新后的4项Python依赖审计均通过、零告警，记录见[验收第13节](../docs/lesson-08/README.md#13-首次-docker-复现准备2026-11-06)。该次只重查受影响的Python范围，没有把上表的默认全量扫描冒称重新执行。
+
 新增脚本自身测试与 Ruff 另见[课程验收第 12 节](../docs/lesson-08/README.md#12-安全自查与文档补齐2026-11-06)。未降低漏洞门槛，也未将早期 Spring 告警接受方案改写为已接受；它们已由此前升级整改。
 
 ## 审计红项

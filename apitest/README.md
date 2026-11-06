@@ -10,6 +10,8 @@
    python -m pip install -r apitest/requirements.txt
    ```
 
+   requirements 使用 `PyMySQL[rsa]`，包含 MySQL 8 的 SHA-2 完整认证依赖；不要只安装基础包后依赖服务端已有认证缓存。依据见 [PyMySQL 官方安装说明](https://pymysql.readthedocs.io/en/latest/user/installation.html)。Class08 首次成员复现的隔离环境和清理命令见[交接](../docs/lesson-08/handoff.md)。
+
 2. 使用仓库根目录的私有 `.env.team` 启动完整团队 Compose 环境：
 
    ```powershell

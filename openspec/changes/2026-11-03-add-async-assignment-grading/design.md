@@ -198,3 +198,9 @@ RabbitMQ 拓扑：持久化 direct exchange `grading.events`；`grading.tasks` �
 六份报告位于reports/：security-precheck、risk-authz、risk-concurrency、risk-transaction、security-baseline、review-01。三类知识库问题草稿另放reports/retrieval-questions.md。自查发现的审计字段等基线缺口只记录真实红项和后续落点；若发现真密钥泄露须先处理，不为了全绿降低规则。另一成员复现按用户指令暂缓，review-01只写可执行待办，不填结论或署名。最终提交由另一成员验收后办理，本轮不提交、归档或打标签。
 
 用户已决定搁置技能 ID 和 Token 用量，不要求另一成员复现、修复或再确认，也不作为本次归档前置条件。原始 SEC-07 红项与脚本退出码保留；交接只要求 `--checks tasks`、`--checks access` 和页面功能/代码复核，不要求重跑包含 SEC-07 的全项入口。此范围决定不豁免越权、依赖漏洞或敏感信息泄露等实际问题。
+
+首次部署从 `.env.example` 复制：显式提供 `campusclaw-plus` 项目名、`campusclaw_plus` 数据库及 18080/13306/15673 宿主端口。特别是数据库验收沿用共享连接工具，未填宿主端口会回退 3306；通过模板固定连接目标，不改旧环境的兼容行为。空库种子只开启一次，随后关闭并重建 backend，保留原初始化口令供登录脚本使用。Python 验收使用已忽略的 `.venv-review` 和 `-B`，不要求本机 JDK/Node 参与容器构建。
+
+MySQL 8.4 默认采用 caching_sha2_password，Python 验收依赖使用 `PyMySQL[rsa]` 补齐完整认证所需的 cryptography；不将已有服务端缓存命中当成完整认证支持，不降级数据库认证插件。新增验收依赖需实际独立安装、检查 RSA 能力并执行 Python 漏洞审计，不能沿用旧 requirements 的零告警结果。
+
+正常自查按登记清理自己的业务资源，原始结果留在忽略目录；失败时保留登记，不宣称彻底清理。手工测试的作业/工具审计需要保留到记录完成；一次性验收环境随后通过同一 Compose 配置移除容器、网络和数据卷，再删除指定本地临时目录。镜像与构建缓存是可复用资源，不执行影响其他项目的全局 prune；保留环境时不删除卷。

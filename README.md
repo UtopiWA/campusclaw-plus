@@ -21,23 +21,38 @@ Vue 3 / Vite、Java 17 / Spring Boot 4、MySQL 8、Qdrant、RabbitMQ、Python MC
 
 ## 快速启动
 
-需要 Docker Compose 和可用的模型服务，在仓库根目录执行：
+Windows 首次安装可按 [Docker Desktop 官方说明](https://docs.docker.com/desktop/setup/install/windows-install/)启用 WSL 2 / Linux 容器，并启动 Docker Desktop。用 `docker info` 确认 Engine 可连接，`docker compose version` 确认 Compose 可用。构建在容器内完成，只启动应用无需本机 Java/Node；运行下述验收脚本另需 Python 3.11+。
+
+需要可用的 Chat 和 Embedding 模型服务，在仓库根目录执行：
 
 ```powershell
 Copy-Item .env.example .env.team
 ```
 
-首次创建后编辑私有 `.env.team`，填写数据库口令、JWT 密钥、模型地址/密钥/名称、实际嵌入维度、MCP 凭据和 RabbitMQ 用户/口令；已有配置无需重新复制。其中 `MCP_TOKEN_ENCRYPTION_KEY` 为 Base64 编码的 32 字节随机密钥，可用 `openssl rand -base64 32` 生成。
+首次创建后编辑私有 `.env.team`，填写所有空白凭据和模型字段。模板已明确团队项目名、`MYSQL_DATABASE=campusclaw_plus` 及三个宿主端口，供 Compose 和验收工具共同使用；已有私有配置无需重新复制或改库。模型地址包含 `/v1`，嵌入维度填实际输出维度；容器访问宿主机模型时使用 `host.docker.internal`，容器内 `localhost` 指向容器自身。首次构建需要网络下载基础镜像和 Maven/npm 依赖。
+
+`AUTH_JWT_SECRET` 至少 32 字节；各口令、MCP Token 使用独立随机值。`MCP_TOKEN_ENCRYPTION_KEY` 为 Base64 编码的 32 字节随机密钥，可用 `python -c "import base64,secrets; print(base64.b64encode(secrets.token_bytes(32)).decode())"` 生成，填入私有配置，不写入文档或 Git。
 
 空数据库首次演示时，将 `DEMO_SEED_ENABLED=true` 并设置 `DEMO_SEED_PASSWORD`，以创建演示账号；默认关闭种子时不会自动创建账号。演示账号为 `teacher-a`、`student-a1`、`student-b1`，口令由该环境变量提供。
 
 ```powershell
-docker compose --env-file .env.team up -d --build
+docker compose --env-file .env.team config --quiet
+docker compose --env-file .env.team up -d --build --wait --wait-timeout 300
+docker compose --env-file .env.team ps
 ```
 
 - 应用：<http://localhost:18080>
 - 健康检查：<http://localhost:18080/health>，返回版本、UTC 时间与数据库/Qdrant 状态；两者就绪返回 200，否则 503，模型与 MCP 标为 `not_checked`。
 - API 文档：<http://localhost:18080/swagger-ui/index.html>
+
+确认三个演示账号可登录后，将 `.env.team` 中 `DEMO_SEED_ENABLED` 改回 `false`，**保留原 `DEMO_SEED_PASSWORD`** 供登录和验收脚本使用。执行以下命令应用配置；单独 [restart](https://docs.docker.com/reference/cli/docker/compose/restart/) 不会载入修改后的环境变量：
+
+```powershell
+docker compose --env-file .env.team up -d --no-deps --wait backend
+docker compose --env-file .env.team restart frontend
+```
+
+不再修改既有数据库口令、JWT 或 MCP 加密键来“重新初始化”。首次成员复现、Python 环境和验收后清理见 [Class08 交接](docs/lesson-08/handoff.md)。
 
 默认项目名 `campusclaw-plus`，七个服务使用独立网络和具名数据卷，后端与 worker 共用一个镜像；不会复用旧 `campusclaw` 项目的容器或数据。网页/MySQL/RabbitMQ 管理端口为 `18080/13306/15673`，均只绑定本机；覆盖键分别为 `APP_PORT/MYSQL_HOST_PORT/RABBITMQ_MANAGEMENT_PORT`。每次启停均指定同一配置文件，不混用个人项目的 `.env`。镜像、卷与构建缓存随 Docker 引擎的数据盘存放，磁盘位置由 Docker Desktop 设置管理。
 
