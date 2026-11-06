@@ -33,7 +33,7 @@ Class07 已完成基线不追加无历史会话、规范破坏试验、回滚和
 
 已实现 Bearer JWT、教师/学生角色与服务端班级隔离、材料管理与异步索引、keyword/vector/hybrid 检索、问答采信、技能与智能体配置、私人持久化流式会话、MCP 管理/调用/审计、OpenAPI、Python 接口回归工具，以及 Class08 的文本作业异步批改（RabbitMQ、事务性发件箱、独立 worker、结果查询）。
 
-前端使用 `/materials`、教师 `/assistants`、`/conversations` 和 `/assignments`，旧 `/search` 重定向到材料页。作业已支持文件依据发布、单次文本作答、异步批改及教师终评（Class08，待评审归档）；错题、学习诊断与计划等业务尚未形成完整链路。MCP 调用审计已可用，不等于全站审计与学情统计已完成。
+前端使用 `/materials`、教师 `/assistants`、`/conversations` 和 `/assignments`，旧 `/search` 重定向到材料页。作业已支持文件依据发布、单次文本作答、异步批改及教师终评（Class08，已验收归档）；错题、学习诊断与计划等业务尚未形成完整链路。MCP 调用审计已可用，不等于全站审计与学情统计已完成。
 
 ## 归档与验收状态
 

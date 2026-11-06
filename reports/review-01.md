@@ -12,7 +12,7 @@
 | 异步任务、停启与重复消息 | 通过，run `51677ea651a9`，`execution=complete cleanup=complete`，退出 0。停 worker 后 4 个并发提交均返回 202 且无分数；任务保持 PENDING；恢复 worker 后自动 SUCCEEDED；子任务与结果各 1 行；补发 3 条重复消息后结果不变；同一学号换答案再次提交返回 409；跨班任务查询 404。停止与恢复期间无其他提交 |
 | SEC-01 匿名访问：命令、接口与返回码 | 通过，run `832b93ccdad0`，`execution=complete cleanup=complete`，退出 0。命令：`./.venv-review/Scripts/python.exe -B scripts/security_precheck.py --env-file .env.team --checks access`。`GET /api/auth/me`、`GET /api/materials`、`GET /api/assistants`、`GET /api/conversations`、`GET /api/assignments`、`POST /api/retrieval/search` 未带 Token 均为 401（6/6） |
 | SEC-02 跨班访问/检索：命令、返回码与数量 | 通过（同上 run）。跨班材料按 ID 读取 404、跨班任务读取 404；本班关键词检索命中 1 条，跨班关键词检索命中 0 条。附加 SEC-03 学生未授权配置写入 403/403 且配置哈希前后一致；SEC-04 越权批改 403/403，未新增未授权作业或终评 |
-| 本轮合成资源清理 | 自动脚本 `cleanup=complete`；页面登记的 `campus-ui-tool` 已在页面删除；API 计算器验收的 MCP 服务与审计按交接保留至栈撤除，技能/助手/会话已删除；页面验收新建的合成材料与作业保留在本次专用部署，未写入仓库；截图位于仓库外 `D:\campusclaw-verify\uiauto`。未提交 `.env.team`、原始日志或运行产物 |
+| 本轮合成资源清理 | 自动脚本 `cleanup=complete`；页面登记的 `campus-ui-tool` 已在页面删除；API 计算器验收的 MCP 服务与审计按交接保留至栈撤除，技能/助手/会话已删除；页面验收新建的合成材料与作业保留在本次专用部署，未写入仓库；截图保存在本地，未入库。未提交 `.env.team`、原始日志或运行产物 |
 | 规则、代码交叉评审及发现的问题 | 见下方七维与逐文件结论；本轮未发现需修改的阻塞缺陷 |
 | 结论 / 最终提交 | 通过（SEC-07 技能 ID/Token 用量按既定决定搁置，不计入本次门槛）；收尾提交 `docs: verify and archive Class08 changes`，未打标签、未推送 |
 

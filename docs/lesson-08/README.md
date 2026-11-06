@@ -351,4 +351,4 @@ Docker Desktop 数据盘已核验在 D 盘，不迁移、不重启整个引擎�
 | 交叉评审 | 七维与逐文件结论见[复核记录](../../reports/review-01.md)；未发现需修改的阻塞缺陷。SEC-07 技能 ID/Token 用量按用户决定继续搁置，不计入本次门槛 |
 | 收尾 | 两个 change 已同步主规格并归档（`2026-11-03-add-async-assignment-grading`、`2026-11-04-upgrade-spring-security-baseline`）；`openspec validate --all --strict` 与 `git diff --check` 通过。未打标签、未推送 |
 
-页面截图保存在仓库外 `D:\campusclaw-verify\uiauto`；私有 `.env.team`、原始日志和运行产物未提交。自动自查仅清理登记的合成资源，页面验收新建的合成材料与作业保留在本次专用部署中；带审计的 API 计算器 MCP 服务按交接保留至栈撤除。
+页面截图保存在本地，未入库；私有 `.env.team`、原始日志和运行产物未提交。自动自查仅清理登记的合成资源，页面验收新建的合成材料与作业保留在本次专用部署中；带审计的 API 计算器 MCP 服务按交接保留至栈撤除。
