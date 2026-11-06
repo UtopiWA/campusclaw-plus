@@ -1,6 +1,6 @@
 # Class08 当前交接
 
-已提交基线为 `e7507b6`（含业务功能与安全工具），用户初验通过；本轮首次部署配置、验收依赖和说明尚未提交，接手时应取得包含这些修改的版本。另一成员尚未独立复现，两个 change 仍活动。
+已提交基线为 `e7507b6`（含业务功能与安全工具），首次部署配置、验收依赖和说明随后提交为 `af9cb93`。2026-11-06 已在本机独立 Docker 环境完成复现、交叉评审与收尾，两个 change 已归档；本文件保留为后续复现流程说明。实际结果见[复核记录](../../reports/review-01.md)。
 
 技能 ID 和 Token 用量暂缓处理，不列入本次复核或归档前置条件；原始 SEC-07 记录保留。
 
@@ -49,7 +49,7 @@ requirements 已包含 MySQL 8 所需的 PyMySQL RSA 认证依赖，不要改成
 
 对照 [项目规则](../../AGENTS.md)和[已有评审](review.md)核对七维/逐文件结论及权限、事务、并发、恢复。将实际成员、交付提交、环境、命令、结果和清理状态写入 [review-01](../../reports/review-01.md)，在 `review.md` 追加结论或链接。有改动补跑受影响检查，没有改动无需重跑整套自动测试。
 
-通过后完成[异步批改](../../openspec/changes/2026-11-03-add-async-assignment-grading/tasks.md)与[依赖升级](../../openspec/changes/2026-11-04-upgrade-spring-security-baseline/tasks.md)的剩余任务，同步 delta 到主规格，执行 `openspec validate --all --strict`、`git diff --check`，归档两个 change，更新 README/项目状态及活动链接，最后提交。建议 message：`docs: verify and archive Class08 changes`；推送与标签按团队授权办理。
+通过后完成[异步批改](../../openspec/changes/archive/2026-11-03-add-async-assignment-grading/tasks.md)与[依赖升级](../../openspec/changes/archive/2026-11-04-upgrade-spring-security-baseline/tasks.md)的剩余任务，同步 delta 到主规格，执行 `openspec validate --all --strict`、`git diff --check`，归档两个 change，更新 README/项目状态及活动链接，最后提交。建议 message：`docs: verify and archive Class08 changes`；推送与标签按团队授权办理。
 
 ## 5. 验收后清理
 

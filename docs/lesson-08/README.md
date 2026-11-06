@@ -1,9 +1,9 @@
 # Class08 异步作业批改验收记录
 
-状态：**功能与安全工具已提交至 `e7507b6`，用户初验通过。本轮首次部署模板/验收依赖/说明未提交；另一成员复现暂缓，待本轮工作完成后交付。两个 change 保持活动，未同步归档，标签未授权。** 第 0～11 节保留各轮实际记录，第 12 节为最新安全自查；历史告警不覆盖最新复扫结论，代理不代签成员。
+状态：**Class08 与依赖升级已在独立 Docker 环境完成复核并归档；收尾提交为 `docs: verify and archive Class08 changes`，未打标签、未推送。** 第 0～13 节保留各轮实际记录和当时边界，第 14 节为独立 Docker 复核与收尾结果；历史告警不覆盖最新复扫结论，SEC-07 缺口继续保留。
 
-- 关联 change：[2026-11-03-add-async-assignment-grading](../../openspec/changes/2026-11-03-add-async-assignment-grading/proposal.md)
-- 能力规约：[assignment-grading](../../openspec/changes/2026-11-03-add-async-assignment-grading/specs/assignment-grading/spec.md)、[reliable-task-execution](../../openspec/changes/2026-11-03-add-async-assignment-grading/specs/reliable-task-execution/spec.md)、[security-precheck](../../openspec/changes/2026-11-03-add-async-assignment-grading/specs/security-precheck/spec.md)
+- 关联 change：[2026-11-03-add-async-assignment-grading](../../openspec/changes/archive/2026-11-03-add-async-assignment-grading/proposal.md)
+- 能力规约：[assignment-grading](../../openspec/changes/archive/2026-11-03-add-async-assignment-grading/specs/assignment-grading/spec.md)、[reliable-task-execution](../../openspec/changes/archive/2026-11-03-add-async-assignment-grading/specs/reliable-task-execution/spec.md)、[security-precheck](../../openspec/changes/archive/2026-11-03-add-async-assignment-grading/specs/security-precheck/spec.md)
 - 评审记录：[review.md](review.md)
 - 交接待办：[handoff.md](handoff.md)
 - 测试/评审规范：[04-testing.md](../standards/04-testing.md)
@@ -166,7 +166,7 @@ EXPLAIN：任务读取走主键；发件箱走 `idx_grading_outbox_status_availa
 
 ## 8. 依赖升级与独立团队 Docker 部署（2026-11-04）
 
-用户本轮明确授权按[独立升级方案](../../openspec/changes/2026-11-04-upgrade-spring-security-baseline/proposal.md)实施，并以本机 Docker 结果为团队部署基线。输入为 `d5167f30b4378b63bf8e762763f0233bd0c8ec4d` 的干净工作区，已含前轮审查修正；实际验证对象为该提交加本轮工作区改动。执行及整理人为协作代理，不代签另一成员结论。
+用户本轮明确授权按[独立升级方案](../../openspec/changes/archive/2026-11-04-upgrade-spring-security-baseline/proposal.md)实施，并以本机 Docker 结果为团队部署基线。输入为 `d5167f30b4378b63bf8e762763f0233bd0c8ec4d` 的干净工作区，已含前轮审查修正；实际验证对象为该提交加本轮工作区改动。执行及整理人为协作代理，不代签另一成员结论。
 
 ### 8.1 运行环境与隔离
 
@@ -337,3 +337,18 @@ Docker Desktop 数据盘已核验在 D 盘，不迁移、不重启整个引擎�
 - 本次 Engine 不可连接，**未重新构建或冷启动、未调用模型、未执行实际容器撤除**；已有冷启动结果见第12节，不将配置解析当作新的运行验收。
 
 清理区分脚本自动回收、保留部署和一次性环境撤除。手工作业/工具审计及失败登记不假称自动清空；共享镜像缓存不执行全局 prune。具体命令见[交接第5节](handoff.md#5-验收后清理)。本轮未提交、归档或代签。
+
+## 14. 独立 Docker 复核与收尾（2026-11-06）
+
+候选 `af9cb93`，在 Windows 11 + Docker Desktop 29.9.2 / Compose v5.6.1（WSL2 Linux 容器）按[交接](handoff.md)独立启动。数据盘与程序安装在本机 E 盘；项目名 `campusclaw-plus`，数据库 `campusclaw_plus`，宿主端口 18080/13306/15673。空库首次以种子创建账号，`teacher-a`、`student-a1`、`student-b1` 登录成功后关闭种子并重建 backend，七服务保持 healthy。
+
+| 项目 | 实际结果 |
+| --- | --- |
+| 页面功能 | 合成参考文件上传后索引 READY，“勾股定理”命中 1 条；教师绑定该文件新建作业；学生提交一次后显示“AI 批改 100 / 100 分”，刷新后仍可查看“我的作答”和结果，编辑框被只读区替换；教师终评 88 分并保存，学生刷新后优先显示“教师终评 88 / 100 分”和评语 |
+| MCP 与计算 | 管理页登记 `campus-tool` 并连接，发现 `formula_hint`、`calculator`；SSE 提问“计算2的20次幂”返回 `calculator@campus-tool` 成功，回答含 `1048576`。页面级 MCP 连接另用临时服务验证并删除 |
+| 异步任务 | run `51677ea651a9`：4 个并发提交均 202 且无分数，停 worker 后 PENDING，恢复后自动 SUCCEEDED，任务/结果各 1 行；补发 3 条重复消息结果不变，换答案重提 409，跨班任务 404；退出 0，`execution=complete cleanup=complete` |
+| 授权 | run `832b93ccdad0`：SEC-01 六个接口匿名均 401；SEC-02 跨班材料/任务 404、跨班检索 0 命中、本班 1 命中；SEC-03 学生配置写入 403/403 且配置哈希不变；SEC-04 越权批改 403/403，未新增未授权作业或终评；退出 0，清理完成 |
+| 交叉评审 | 七维与逐文件结论见[复核记录](../../reports/review-01.md)；未发现需修改的阻塞缺陷。SEC-07 技能 ID/Token 用量按用户决定继续搁置，不计入本次门槛 |
+| 收尾 | 两个 change 已同步主规格并归档（`2026-11-03-add-async-assignment-grading`、`2026-11-04-upgrade-spring-security-baseline`）；`openspec validate --all --strict` 与 `git diff --check` 通过。未打标签、未推送 |
+
+页面截图保存在仓库外 `D:\campusclaw-verify\uiauto`；私有 `.env.team`、原始日志和运行产物未提交。自动自查仅清理登记的合成资源，页面验收新建的合成材料与作业保留在本次专用部署中；带审计的 API 计算器 MCP 服务按交接保留至栈撤除。

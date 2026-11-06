@@ -13,7 +13,7 @@
 - [项目规则](AGENTS.md) 与 [主规格](openspec/specs/)：开发约束和已实现行为契约。
 - 工程规范：[产品](docs/standards/01-product.md)、[后端](docs/standards/02-backend.md)、[安全](docs/standards/03-security.md)、[测试与评审](docs/standards/04-testing.md)、[运维](docs/standards/05-operations.md)。
 - [接口回归说明](apitest/README.md)：测试环境、执行方式和报告。
-- [Class08 安全自查](reports/security-precheck.md)：授权、并发/事务、密钥与依赖结果；[同伴复核](reports/review-01.md)待本轮工作完成后交付另一成员。
+- [Class08 安全自查](reports/security-precheck.md)：授权、并发/事务、密钥与依赖结果；[独立 Docker 复核](reports/review-01.md)已完成并归档。
 
 ## 技术栈
 
@@ -52,7 +52,7 @@ docker compose --env-file .env.team up -d --no-deps --wait backend
 docker compose --env-file .env.team restart frontend
 ```
 
-不再修改既有数据库口令、JWT 或 MCP 加密键来“重新初始化”。首次成员复现、Python 环境和验收后清理见 [Class08 交接](docs/lesson-08/handoff.md)。
+不再修改既有数据库口令、JWT 或 MCP 加密键来“重新初始化”。独立复现记录、Python 环境和验收后清理见 [Class08 交接](docs/lesson-08/handoff.md)与[复核记录](reports/review-01.md)。
 
 默认项目名 `campusclaw-plus`，七个服务使用独立网络和具名数据卷，后端与 worker 共用一个镜像；不会复用旧 `campusclaw` 项目的容器或数据。网页/MySQL/RabbitMQ 管理端口为 `18080/13306/15673`，均只绑定本机；覆盖键分别为 `APP_PORT/MYSQL_HOST_PORT/RABBITMQ_MANAGEMENT_PORT`。每次启停均指定同一配置文件，不混用个人项目的 `.env`。镜像、卷与构建缓存随 Docker 引擎的数据盘存放，磁盘位置由 Docker Desktop 设置管理。
 

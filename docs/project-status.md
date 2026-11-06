@@ -15,19 +15,19 @@
 | 五类工程规范与工具读取规则 | `docs/standards/01-product.md`～`05-operations.md` 已成文；AGENTS 按范围加载，已新增团队检查技能；由另一成员审核规则与文档 |
 | 团队基线 change | 15/15 项完成；另一成员完成功能复现、审核并归档 |
 | 收尾流程 | 已完成：另一成员原生进程复现、审核、同步规格并归档；Compose/Testcontainers 沿用发起方结果 |
-| Class08 异步作业批改 | 功能已提交至 `45b2f7a`，用户初验通过；安全报告齐全。技能 ID 和 Token 用量暂缓处理，不列入本次复核；待另一成员独立复现、评审及归档 |
+| Class08 异步作业批改 | 已完成并归档：功能提交 `45b2f7a`，独立 Docker 复核、页面/异步/授权检查与交叉评审通过；技能 ID 和 Token 用量继续搁置，见[复核记录](../reports/review-01.md) |
 | 诊断、计划、推荐与班级分析 | 规划中，未实现 |
 
 Class07 已完成基线不追加无历史会话、规范破坏试验、回滚和全历史/镜像扫描。已取消项未记为通过；其审核结论沿用[课程验收记录](lesson-07/README.md)，不新增台账。
 
-当前活动 change：
+当前活动 change：无。Class08 相关两个 change 已于 2026-11-06 归档：
 
-- [异步作业批改](../openspec/changes/2026-11-03-add-async-assignment-grading/proposal.md)：参考答案综合评分、单次提交、教师终评与顶部反馈已实现；创建不调用模型、不提取评分项，旧成绩不变。验收及清理见 [第 10～12 节](lesson-08/README.md#10-参考答案支持的-ai-综合评分2026-11-05)；指定演示数据已清理，参考材料保留。[安全自查](../reports/security-precheck.md)已纳入原 change；SEC-07 两项缺口搁置，原始红项保留，不作为本次复核或归档前置条件。另一成员按[交接](lesson-08/handoff.md)独立复现后收尾。
-- [依赖升级与团队部署](../openspec/changes/2026-11-04-upgrade-spring-security-baseline/proposal.md)：Boot 4/Jackson 3 迁移及 `campusclaw-plus` 七服务已完成；OSV 124/124、npm/pip 审计零告警，默认 scan 全部通过。网页 18080、MySQL 13306、RabbitMQ 管理 15673，原项目容器/数据未变。技术结果见[本轮验收](lesson-08/README.md#8-依赖升级与独立团队-docker-部署2026-11-04)，另一成员稍后按此 Docker 配置复现；任务 4.1/4.2 保持未完成。
+- [异步作业批改](../openspec/changes/archive/2026-11-03-add-async-assignment-grading/proposal.md)：参考答案综合评分、单次提交、教师终评与顶部反馈已实现；创建不调用模型、不提取评分项，旧成绩不变。验收及清理见 [第 10～14 节](lesson-08/README.md#14-独立-docker-复核与收尾2026-11-06)；指定演示数据已清理，参考材料保留。[安全自查](../reports/security-precheck.md)已纳入原 change；SEC-07 两项缺口搁置，原始红项保留，不作为本次复核或归档前置条件。另一成员已按[交接](lesson-08/handoff.md)独立复现并归档。
+- [依赖升级与团队部署](../openspec/changes/archive/2026-11-04-upgrade-spring-security-baseline/proposal.md)：Boot 4/Jackson 3 迁移及 `campusclaw-plus` 七服务已完成；OSV 124/124、npm/pip 审计零告警，默认 scan 全部通过。网页 18080、MySQL 13306、RabbitMQ 管理 15673，原项目容器/数据未变。技术结果见[本轮验收](lesson-08/README.md#8-依赖升级与独立团队-docker-部署2026-11-04)，另一成员已按此 Docker 配置独立复现，任务 4.1/4.2 完成并归档。
 
-功能与安全工具已提交至 `e7507b6`；本轮首次部署模板/验收依赖/说明未提交，未执行推送、规格同步、归档或标签；不将代理技术验证当作成员签署。此前风险接受方案未获批准，相关告警现已通过实际升级整改，无需把历史拒绝改写成接受。
+功能与安全工具已提交至 `e7507b6`，首次部署模板/验收依赖/说明提交为 `af9cb93`；本轮完成独立 Docker 复核、规格同步、两个 change 归档，收尾提交为 `docs: verify and archive Class08 changes`。未执行推送或创建标签；不将代理技术验证当作成员签署。此前风险接受方案未获批准，相关告警现已通过实际升级整改，无需把历史拒绝改写成接受。
 
-首次成员复现准备已对齐模板库名/端口、补齐MySQL RSA验收依赖及Python隔离/清理说明；34项脚本测试、合成Compose解析、独立安装及4项Python依赖零告警通过。本轮Engine未连接，未重做冷启动或实际撤除，详见[第13节](lesson-08/README.md#13-首次-docker-复现准备2026-11-06)。
+首次复现准备已对齐模板库名/端口、补齐MySQL RSA验收依赖及Python隔离/清理说明；34项脚本测试、合成Compose解析、独立安装及4项Python依赖零告警通过。随后在本机连接 Engine，从空库冷启动七服务并完成独立复核，详见[第14节](lesson-08/README.md#14-独立-docker-复核与收尾2026-11-06)；验收后按交接撤除本次专用栈。
 
 ## 实现范围
 
@@ -43,6 +43,8 @@ Class07 已完成基线不追加无历史会话、规范破坏试验、回滚和
 | MCP 工具与审计 | 31/31，验收通过 | [归档说明](../openspec/changes/archive/2026-10-28-add-mcp-tools-and-audit/README.md) |
 | Markdown 感知切分 | 8/8，验收通过；MySQL/Qdrant 集成测试 18 项通过，无失败/错误/跳过 | [归档说明](../openspec/changes/archive/2026-10-28-fix-markdown-aware-knowledge-chunking/README.md) |
 | RAG 采信收紧 | 7/7，验收通过 | [归档说明](../openspec/changes/archive/2026-10-28-tighten-rag-evidence-acceptance/README.md) |
+| Class08 异步作业批改 | 46/46，独立 Docker 复核通过 | [归档说明](../openspec/changes/archive/2026-11-03-add-async-assignment-grading/README.md) |
+| 依赖升级与团队部署 | 14/14，独立复现与交叉评审通过 | [归档说明](../openspec/changes/archive/2026-11-04-upgrade-spring-security-baseline/proposal.md) |
 
 个人阶段三个 change 均于 2026-10-28 同步归档，无个人阶段遗留验收项。团队基线 change 已于 2026-10-31 同步归档；已归档行为见[主规格](../openspec/specs/)，本轮验收边界见[课程验收记录](lesson-07/README.md)。
 
@@ -54,4 +56,4 @@ Class07 已完成基线不追加无历史会话、规范破坏试验、回滚和
 - 本次收敛了旧检索规格的单页聊天描述，主规格统一为材料页直接检索与私人助手会话分离；会话零重合拒答也明确属于流式完成后的正文归一化。
 - 旧 entries 不会因重建 chunks 自动重解析；原文件、知识条目与检索切片是不同层次。
 - 本轮工程基线已通过 all、隔离运行检查和另一成员原生进程功能复现；学习诊断等新增业务尚未实现。
-- Class08 已在升级后 Docker 中复验核心判据、故障、API 和页面；空库冷启动、旧 V8 数据和旧应用回读通过。默认扫描零告警，OWASP 未运行；成员复核、归档及标签状态见[交接](lesson-08/handoff.md)。
+- Class08 已在升级后 Docker 中复验核心判据、故障、API 和页面；空库冷启动、旧 V8 数据和旧应用回读通过。默认扫描零告警，OWASP 未运行；成员独立复核与归档已完成，标签未授权、未推送，详见[交接](lesson-08/handoff.md)。

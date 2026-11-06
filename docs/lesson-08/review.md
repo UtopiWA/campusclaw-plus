@@ -1,8 +1,8 @@
 # Class08 评审记录
 
-状态：**功能与安全工具已提交至 `e7507b6`，用户初验通过。本轮首次部署模板/验收依赖/说明未提交；另一成员复现暂缓，待本轮工作完成后交付。两个 change 保持活动，未同步归档，标签未授权。** 第 0～11 节为历史分轮记录，第 12 节为最新安全自审；代理不代签成员结论。
+状态：**独立 Docker 复核已完成，两个 change 已同步归档；收尾提交为 `docs: verify and archive Class08 changes`，未打标签、未推送。** 第 0～13 节为历史分轮记录，第 14 节为本次独立复核结论；SEC-07 缺口保留，代理不代签成员结论。
 
-- 关联 change：[2026-11-03-add-async-assignment-grading](../../openspec/changes/2026-11-03-add-async-assignment-grading/proposal.md)
+- 关联 change：[2026-11-03-add-async-assignment-grading](../../openspec/changes/archive/2026-11-03-add-async-assignment-grading/proposal.md)
 - 验收记录：[README.md](README.md)
 - 交接待办：[handoff.md](handoff.md)
 - 测试/评审规范：[04-testing.md](../standards/04-testing.md)
@@ -141,7 +141,7 @@
 
 ### 7.5 依赖遗留与成员决定（暂不接受风险）
 
-2026-11-04，成员 A 明确回复：**“暂不接受风险，保留活动 change”**。以下为本次复核提出的适用性依据和处置建议，**未获接受，不构成风险豁免**。已另立[独立依赖升级 change](../../openspec/changes/2026-11-04-upgrade-spring-security-baseline/proposal.md)，仅完成规划；整改、复查并获得实际评审后再判断能否收尾 Class08，本轮不直接实施框架升级。
+2026-11-04，成员 A 明确回复：**“暂不接受风险，保留活动 change”**。以下为本次复核提出的适用性依据和处置建议，**未获接受，不构成风险豁免**。已另立[独立依赖升级 change](../../openspec/changes/archive/2026-11-04-upgrade-spring-security-baseline/proposal.md)，仅完成规划；整改、复查并获得实际评审后再判断能否收尾 Class08，本轮不直接实施框架升级。
 
 - **两项 Spring 告警保留，不降低扫描阈值。** [CVE-2026-47890](https://spring.io/security/cve-2026-47890/) 要求 SSE 视图片段及攻击者可影响他人流内容；本项目由 ConversationController 返回 StreamingResponseBody，自行编码 JSON SSE，未使用视图片段。 [CVE-2026-47884](https://spring.io/security/cve-2026-47884/) 要求 XsltView 等视图渲染组合，本项目 REST 控制器及配置未使用这些路径。故建议按当前调用路径不适用处置，不能据此称依赖本身不受影响。
 - Spring 官方将上述两项标为 low/medium，而 OSV/GitHub 为 critical；保留两种来源差异，OSV 仍退出 1。公开修复为 Spring 7.0.9，6.2.20 为商业支持版本，不直接把 Spring 7 塞入 Boot 3。引入相关视图、SSE 机制或升级依赖时，原适用性判断立即失效；长期对外部署前重新审查并安排独立 Boot 4 升级。
@@ -240,11 +240,11 @@
 | `frontend/src/services/assignments.js` | 可用 | 取消旧请求并校验选择版本；刷新恢复、终态停止及真实浏览器链路通过 |
 | `frontend/src/views/AssignmentsView.test.js` | 可用 | 核查断言区分正确/错误实现；最终检查计数见验收记录，不把旧报告当结果 |
 | `frontend/src/views/AssignmentsView.vue` | 可用 | 取消旧请求并校验选择版本；刷新恢复、终态停止及真实浏览器链路通过 |
-| `openspec/changes/2026-11-03-add-async-assignment-grading/design.md` | 可用 | 现有契约矛盾已校正；只新增细化场景，未提前同步主规格或假勾成员确认 |
-| `openspec/changes/2026-11-03-add-async-assignment-grading/proposal.md` | 可用 | 现有契约矛盾已校正；只新增细化场景，未提前同步主规格或假勾成员确认 |
-| `openspec/changes/2026-11-03-add-async-assignment-grading/specs/assignment-grading/spec.md` | 可用 | 现有契约矛盾已校正；只新增细化场景，未提前同步主规格或假勾成员确认 |
-| `openspec/changes/2026-11-03-add-async-assignment-grading/specs/reliable-task-execution/spec.md` | 可用 | 现有契约矛盾已校正；只新增细化场景，未提前同步主规格或假勾成员确认 |
-| `openspec/changes/2026-11-03-add-async-assignment-grading/tasks.md` | 可用 | 现有契约矛盾已校正；只新增细化场景，未提前同步主规格或假勾成员确认 |
+| `openspec/changes/archive/2026-11-03-add-async-assignment-grading/design.md` | 可用 | 现有契约矛盾已校正；只新增细化场景，未提前同步主规格或假勾成员确认 |
+| `openspec/changes/archive/2026-11-03-add-async-assignment-grading/proposal.md` | 可用 | 现有契约矛盾已校正；只新增细化场景，未提前同步主规格或假勾成员确认 |
+| `openspec/changes/archive/2026-11-03-add-async-assignment-grading/specs/assignment-grading/spec.md` | 可用 | 现有契约矛盾已校正；只新增细化场景，未提前同步主规格或假勾成员确认 |
+| `openspec/changes/archive/2026-11-03-add-async-assignment-grading/specs/reliable-task-execution/spec.md` | 可用 | 现有契约矛盾已校正；只新增细化场景，未提前同步主规格或假勾成员确认 |
+| `openspec/changes/archive/2026-11-03-add-async-assignment-grading/tasks.md` | 可用 | 现有契约矛盾已校正；只新增细化场景，未提前同步主规格或假勾成员确认 |
 | `ruff.toml` | 可用 | 实际执行规范检查；没有放宽权限、采信或漏洞阈值 |
 | `scripts/lesson08_acceptance.py` | 可用 | 显式目标/配置参数；FAILED、202 含分数及重复后变更均不再误判通过 |
 | `scripts/osv_scan.py` | 可用 | 103/103 查询；失败/空清单/未知严重性非零退出，原始告警不抑制 |
@@ -253,11 +253,11 @@
 | `scripts/tests/test_osv_scan.py` | 可用 | 核查断言区分正确/错误实现；最终检查计数见验收记录，不把旧报告当结果 |
 | `docs/standards/05-operations.md` | 可用 | 同步任务日志白名单、评分配置与 worker 初始化边界，保留迁移/部署范围说明 |
 | `openspec/config.yaml` | 可用 | 移除过期 Class07 状态；区分已实现异步批改和未通过交付门槛，规则及 apply 指引保留 |
-| `openspec/changes/2026-11-03-add-async-assignment-grading/README.md` | 可用 | 修正“未实现”描述；保留活动状态，不提前同步或归档 |
-| `openspec/changes/2026-11-04-upgrade-spring-security-baseline/.openspec.yaml` | 可用（规划） | 兼容迁移不改外部契约，明确 skip_specs，不虚构新业务需求 |
-| `openspec/changes/2026-11-04-upgrade-spring-security-baseline/proposal.md` | 可用（规划） | 独立承载未接受风险的整改，保留 Class08 活动状态和现有修正 |
-| `openspec/changes/2026-11-04-upgrade-spring-security-baseline/design.md` | 可用（规划） | 官方平台/迁移依据；明确 JSON、AMQP、旧数据兼容与逐项复扫边界，未执行升级 |
-| `openspec/changes/2026-11-04-upgrade-spring-security-baseline/tasks.md` | 可用（规划） | 全部未勾选，按开发/测试整体分工，另一成员复核且不代签 |
+| `openspec/changes/archive/2026-11-03-add-async-assignment-grading/README.md` | 可用 | 修正“未实现”描述；保留活动状态，不提前同步或归档 |
+| `openspec/changes/archive/2026-11-04-upgrade-spring-security-baseline/.openspec.yaml` | 可用（规划） | 兼容迁移不改外部契约，明确 skip_specs，不虚构新业务需求 |
+| `openspec/changes/archive/2026-11-04-upgrade-spring-security-baseline/proposal.md` | 可用（规划） | 独立承载未接受风险的整改，保留 Class08 活动状态和现有修正 |
+| `openspec/changes/archive/2026-11-04-upgrade-spring-security-baseline/design.md` | 可用（规划） | 官方平台/迁移依据；明确 JSON、AMQP、旧数据兼容与逐项复扫边界，未执行升级 |
+| `openspec/changes/archive/2026-11-04-upgrade-spring-security-baseline/tasks.md` | 可用（规划） | 全部未勾选，按开发/测试整体分工，另一成员复核且不代签 |
 
 ### 7.7 升级前合入门槛（历史，最新见第 8 节）
 
@@ -343,11 +343,11 @@
 | `docs/standards/05-operations.md` | 可用 | 对照实现、运行结果、配置与链接；保留历史及未完成成员门槛，不冒称归档 |
 | `frontend/package-lock.json` | 可用 | npm 12 隔离生成，npm ci 本机/容器复现，无 force 或忽略 peer |
 | `frontend/package.json` | 可用 | 修复 KaTeX 与工具链告警；实际 lint/76 测试/构建及全量 audit 零告警 |
-| `openspec/changes/2026-11-03-add-async-assignment-grading/README.md` | 可用 | 对照实现、运行结果、配置与链接；保留历史及未完成成员门槛，不冒称归档 |
-| `openspec/changes/2026-11-03-add-async-assignment-grading/tasks.md` | 可用 | 对照实现、运行结果、配置与链接；保留历史及未完成成员门槛，不冒称归档 |
-| `openspec/changes/2026-11-04-upgrade-spring-security-baseline/design.md` | 可用 | 对照实现、运行结果、配置与链接；保留历史及未完成成员门槛，不冒称归档 |
-| `openspec/changes/2026-11-04-upgrade-spring-security-baseline/proposal.md` | 可用 | 对照实现、运行结果、配置与链接；保留历史及未完成成员门槛，不冒称归档 |
-| `openspec/changes/2026-11-04-upgrade-spring-security-baseline/tasks.md` | 可用 | 对照实现、运行结果、配置与链接；保留历史及未完成成员门槛，不冒称归档 |
+| `openspec/changes/archive/2026-11-03-add-async-assignment-grading/README.md` | 可用 | 对照实现、运行结果、配置与链接；保留历史及未完成成员门槛，不冒称归档 |
+| `openspec/changes/archive/2026-11-03-add-async-assignment-grading/tasks.md` | 可用 | 对照实现、运行结果、配置与链接；保留历史及未完成成员门槛，不冒称归档 |
+| `openspec/changes/archive/2026-11-04-upgrade-spring-security-baseline/design.md` | 可用 | 对照实现、运行结果、配置与链接；保留历史及未完成成员门槛，不冒称归档 |
+| `openspec/changes/archive/2026-11-04-upgrade-spring-security-baseline/proposal.md` | 可用 | 对照实现、运行结果、配置与链接；保留历史及未完成成员门槛，不冒称归档 |
+| `openspec/changes/archive/2026-11-04-upgrade-spring-security-baseline/tasks.md` | 可用 | 对照实现、运行结果、配置与链接；保留历史及未完成成员门槛，不冒称归档 |
 | `openspec/config.yaml` | 可用 | 同步 Boot 4/团队部署事实，规则及 apply 安全约束保留 |
 | `scripts/lesson08_acceptance.py` | 可用 | 从所选配置读取地址；正式 .env.team 命令批改成功，数据库/队列报告通过 |
 | `scripts/tests/test_api_config.py` | 可用 | 团队端口/凭据选择、缺文件不回退旧配置；20 项脚本回归通过 |
@@ -442,11 +442,11 @@
 | `frontend/src/views/SearchView.test.js` | 可用 | 保留适用原断言并更新展示契约；加入失败/并发/权限/模型结构/恢复断言，最终套件通过 |
 | `frontend/src/views/SearchView.vue` | 可用 | 原操作反馈接入全局消息，失败输入和业务状态保留；页面回归与 lint 通过 |
 | `frontend/test-support/mountWithFeedback.js` | 可用 | 测试挂载实际全局消息组件，不以移除错误断言替代展示回归 |
-| `openspec/changes/2026-11-03-add-async-assignment-grading/README.md` | 可用 | 对照当前实现、命令、授权范围和活动状态同步；不引用仓库外资源，不代签或提前归档 |
-| `openspec/changes/2026-11-03-add-async-assignment-grading/design.md` | 可用 | 对照当前实现、命令、授权范围和活动状态同步；不引用仓库外资源，不代签或提前归档 |
-| `openspec/changes/2026-11-03-add-async-assignment-grading/proposal.md` | 可用 | 对照当前实现、命令、授权范围和活动状态同步；不引用仓库外资源，不代签或提前归档 |
-| `openspec/changes/2026-11-03-add-async-assignment-grading/specs/assignment-grading/spec.md` | 可用 | 对照当前实现、命令、授权范围和活动状态同步；不引用仓库外资源，不代签或提前归档 |
-| `openspec/changes/2026-11-03-add-async-assignment-grading/tasks.md` | 可用 | 对照当前实现、命令、授权范围和活动状态同步；不引用仓库外资源，不代签或提前归档 |
+| `openspec/changes/archive/2026-11-03-add-async-assignment-grading/README.md` | 可用 | 对照当前实现、命令、授权范围和活动状态同步；不引用仓库外资源，不代签或提前归档 |
+| `openspec/changes/archive/2026-11-03-add-async-assignment-grading/design.md` | 可用 | 对照当前实现、命令、授权范围和活动状态同步；不引用仓库外资源，不代签或提前归档 |
+| `openspec/changes/archive/2026-11-03-add-async-assignment-grading/proposal.md` | 可用 | 对照当前实现、命令、授权范围和活动状态同步；不引用仓库外资源，不代签或提前归档 |
+| `openspec/changes/archive/2026-11-03-add-async-assignment-grading/specs/assignment-grading/spec.md` | 可用 | 对照当前实现、命令、授权范围和活动状态同步；不引用仓库外资源，不代签或提前归档 |
+| `openspec/changes/archive/2026-11-03-add-async-assignment-grading/tasks.md` | 可用 | 对照当前实现、命令、授权范围和活动状态同步；不引用仓库外资源，不代签或提前归档 |
 
 ### 9.3 发现、整改与门槛
 
@@ -505,11 +505,11 @@
 | `docs/lesson-08/README.md` | 可用 | 分开第9节历史与本轮命令/实测，不将模拟值当真实模型输出 |
 | `docs/lesson-08/handoff.md` | 可用 | 另一成员复现以最新第10节及当前候选为准，不代签 |
 | `docs/lesson-08/review.md` | 可用 | 七维、逐文件及高风险记录，仍待实际成员交叉评审 |
-| `openspec/changes/2026-11-03-add-async-assignment-grading/proposal.md` | 可用 | 最新用户决定替换原评分口径，不扩大其他业务范围 |
-| `openspec/changes/2026-11-03-add-async-assignment-grading/design.md` | 可用 | 严格score/rationale、无提取、兼容旧结果、v4及事务边界 |
-| `openspec/changes/2026-11-03-add-async-assignment-grading/specs/assignment-grading/spec.md` | 可用 | 纯答案创建、综合87分、非法输出和历史兼容均有场景 |
-| `openspec/changes/2026-11-03-add-async-assignment-grading/tasks.md` | 可用 | 历史清单保留，新增本轮4.x并只按实际完成勾选 |
-| `openspec/changes/2026-11-03-add-async-assignment-grading/README.md` | 可用 | 最新策略及第10节入口，仍为活动change |
+| `openspec/changes/archive/2026-11-03-add-async-assignment-grading/proposal.md` | 可用 | 最新用户决定替换原评分口径，不扩大其他业务范围 |
+| `openspec/changes/archive/2026-11-03-add-async-assignment-grading/design.md` | 可用 | 严格score/rationale、无提取、兼容旧结果、v4及事务边界 |
+| `openspec/changes/archive/2026-11-03-add-async-assignment-grading/specs/assignment-grading/spec.md` | 可用 | 纯答案创建、综合87分、非法输出和历史兼容均有场景 |
+| `openspec/changes/archive/2026-11-03-add-async-assignment-grading/tasks.md` | 可用 | 历史清单保留，新增本轮4.x并只按实际完成勾选 |
+| `openspec/changes/archive/2026-11-03-add-async-assignment-grading/README.md` | 可用 | 最新策略及第10节入口，仍为活动change |
 
 ### 10.3 门槛
 
@@ -577,7 +577,7 @@ SEC-07 的技能 ID 和 Token 用量已按用户决定搁置，不列入本次�
 
 ## 13. 首次部署模板与交接自审（2026-11-06）
 
-候选为 `e7507b6` 加本轮修改，由协作代理整理、测试；另一成员尚未执行。实际命令和限制见[验收第13节](README.md#13-首次-docker-复现准备2026-11-06)。
+候选为 `e7507b6` 加本轮修改，由协作代理整理、测试；当时另一成员尚未执行，同日已由第 14 节完成独立复核与收尾。实际命令和限制见[验收第13节](README.md#13-首次-docker-复现准备2026-11-06)。
 
 | 维度 | 结论 |
 | --- | --- |
@@ -598,3 +598,7 @@ SEC-07 的技能 ID 和 Token 用量已按用户决定搁置，不列入本次�
 | `README.md`、`docs/lesson-08/handoff.md` | 可用 | 官方安装/命令来源，种子重建、环境依赖和清理分支完整，不承诺失败后无残留 |
 | `docs/lesson-08/README.md`、`review.md`、`docs/project-status.md` | 可用 | 已提交基线和当前修改区分，本轮未连接Engine、未重做冷启动如实记录 |
 | `reports/review-01.md`、活动 change README/proposal/design/spec/tasks | 可用 | 交付版本与首次复现约定一致，人员任务不代签、SEC-07不追加门槛 |
+
+## 14. 独立 Docker 复核（2026-11-06）
+
+候选 `af9cb93`，在本机独立 Docker Desktop（29.9.2 / Compose v5.6.1，WSL2）按[交接](handoff.md)复现。七服务 healthy；页面完成材料 READY 与检索、作业创建、学生单次提交与 AI 批改结果持久化、教师终评 88 分及学生端优先展示；MCP 页面连接发现 `calculator`，SSE 调用返回 1048576。异步 run `51677ea651a9` 验证 4×202、停 worker PENDING、恢复 SUCCEEDED、3 条重复消息结果不变、改答 409；授权 run `832b93ccdad0` 记录 SEC-01 六接口 401、SEC-02 跨班 404/0 命中，并附加 SEC-03/04 实际值。两项均退出 0，`execution=complete cleanup=complete`。未发现需修改的阻塞缺陷；SEC-07 技能 ID 与 Token 用量按用户决定继续搁置，不纳入本次门槛。完整记录与逐文件结论见[复核记录](../../reports/review-01.md)。收尾提交为 `docs: verify and archive Class08 changes`，未打标签、未推送。
