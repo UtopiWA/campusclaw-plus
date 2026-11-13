@@ -36,3 +36,14 @@ describe('authGuard', () => {
     } })).resolves.toBe(true)
   })
 })
+
+it('registers protected mastery and plan subpages and keeps the old entry as a redirect', async () => {
+  const routes = router.getRoutes()
+  expect(routes.find((item) => item.path === '/learning').redirect).toBe('/learning/mastery')
+  for (const path of ['/learning/mastery', '/learning/plan']) {
+    const route = routes.find((item) => item.path === path)
+    expect(route.meta).toMatchObject({ requiresAuth: true, role: 'student' })
+    authState.user = { id: 2, role: 'teacher' }
+    await expect(authGuard({ path, fullPath: path, meta: route.meta })).resolves.toBe('/conversations')
+  }
+})

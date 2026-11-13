@@ -36,6 +36,9 @@ public class Assignment {
     @Column(name = "rubric_text", columnDefinition = "MEDIUMTEXT")
     private String rubricText;
 
+    @Column(name = "personal_practice", nullable = false)
+    private boolean personalPractice = false;
+
     @Column(nullable = false)
     private boolean gradable = false;
 
@@ -92,6 +95,8 @@ public class Assignment {
         this.rubricSourceJson = sourceJson;
         this.rubricText = text;
     }
+    public boolean isPersonalPractice() { return personalPractice; }
+    public void markPersonalPractice() { personalPractice = true; }
     public boolean isGradable() { return gradable; }
     public Long getCreatedBy() { return createdBy; }
     public Instant getCreatedAt() { return createdAt; }

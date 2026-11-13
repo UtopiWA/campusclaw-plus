@@ -21,14 +21,16 @@ const navItems = computed(() => isTeacher.value
       { key: 'assistant-chat', label: '助手对话', icon: 'bot', to: '/conversations' },
       { key: 'assistant-config', label: '助手配置', icon: 'layers', to: '/assistants' },
       { key: 'assignments', label: '作业与批改', icon: 'homework', to: '/assignments' },
-      { key: 'audit', label: '审计与统计', icon: 'audit' },
+      { key: 'questions', label: '题库', icon: 'book', to: '/questions' },
+      { key: 'teaching', label: '教学与学情', icon: 'audit', to: '/teaching' },
     ]
   : [
       { key: 'home', label: '学生首页', icon: 'home' },
       { key: 'materials', label: '讲义与检索', icon: 'book', to: '/materials' },
       { key: 'assistant-chat', label: '助手对话', icon: 'bot', to: '/conversations' },
       { key: 'assignments', label: '作业', icon: 'homework', to: '/assignments' },
-      { key: 'audit', label: '学情分析', icon: 'audit' },
+      { key: 'questions', label: '题库', icon: 'book', to: '/questions' },
+      { key: 'learning', label: '我的学情', icon: 'audit', to: '/learning' },
     ])
 
 async function signOut() {

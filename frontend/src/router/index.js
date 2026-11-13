@@ -3,7 +3,10 @@ import LoginView from '../views/LoginView.vue'
 import MaterialsView from '../views/MaterialsView.vue'
 import AgentConfigView from '../views/AgentConfigView.vue'
 import ConversationsView from '../views/ConversationsView.vue'
+import QuestionBankView from '../views/QuestionBankView.vue'
 import AssignmentsView from '../views/AssignmentsView.vue'
+import LearningView from '../views/LearningView.vue'
+import TeachingView from '../views/TeachingView.vue'
 import { authState, loadCurrentUser } from '../services/auth.js'
 
 const router = createRouter({
@@ -15,7 +18,12 @@ const router = createRouter({
     { path: '/search', redirect: '/materials' },
     { path: '/assistants', component: AgentConfigView, meta: { requiresAuth: true, role: 'teacher' } },
     { path: '/conversations/:id?', component: ConversationsView, meta: { requiresAuth: true } },
-    { path: '/assignments', component: AssignmentsView, meta: { requiresAuth: true } },
+    { path: '/questions/:id?', component: QuestionBankView, meta: { requiresAuth: true } },
+    { path: '/assignments/:id?', component: AssignmentsView, meta: { requiresAuth: true } },
+    { path: '/learning', redirect: '/learning/mastery', meta: { requiresAuth: true, role: 'student' } },
+    { path: '/learning/mastery', component: LearningView, props: { section: 'mastery' }, meta: { requiresAuth: true, role: 'student' } },
+    { path: '/learning/plan', component: LearningView, props: { section: 'plan' }, meta: { requiresAuth: true, role: 'student' } },
+    { path: '/teaching', component: TeachingView, meta: { requiresAuth: true, role: 'teacher' } },
     { path: '/:pathMatch(.*)*', redirect: '/materials' },
   ],
 })

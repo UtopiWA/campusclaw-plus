@@ -1,6 +1,9 @@
 package com.campusclaw.grading;
 
 import com.campusclaw.common.BadRequestException;
+import com.campusclaw.learning.MaterialTagService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.annotation.Transactional;
 import com.campusclaw.common.NotFoundException;
 import com.campusclaw.persistence.IndexStatus;
 import com.campusclaw.persistence.KnowledgeEntryRepository;
@@ -21,16 +24,37 @@ public class AssignmentCreationService {
     private final MaterialRepository materials;
     private final KnowledgeEntryRepository entries;
     private final ObjectMapper mapper;
+    private final MaterialTagService tags;
 
     public AssignmentCreationService(AssignmentService assignments, MaterialRepository materials,
                                       KnowledgeEntryRepository entries, ObjectMapper mapper) {
+        this(assignments, materials, entries, mapper, null);
+    }
+
+    @Autowired
+    public AssignmentCreationService(AssignmentService assignments, MaterialRepository materials,
+                                      KnowledgeEntryRepository entries, ObjectMapper mapper, MaterialTagService tags) {
+        this.tags = tags;
         this.assignments = assignments;
         this.materials = materials;
         this.entries = entries;
         this.mapper = mapper;
     }
 
+    @Transactional
     public AssignmentView create(CreateAssignmentRequest request, UserAccount teacher) {
+        return create(request, teacher, false);
+    }
+
+    @Transactional
+    public AssignmentView createPractice(CreateAssignmentRequest request, UserAccount teacher) {
+        if (request.rubricMaterialIds() == null || request.rubricMaterialIds().isEmpty()) {
+            throw new BadRequestException("请选择参考答案讲义");
+        }
+        return create(request, teacher, true);
+    }
+
+    private AssignmentView create(CreateAssignmentRequest request, UserAccount teacher, boolean personalPractice) {
         if (teacher.getRole() != Role.TEACHER) throw new AccessDeniedException("Teacher role required");
         if (request.rubricMaterialIds() == null || request.rubricMaterialIds().isEmpty()) {
             return assignments.create(request, teacher);
@@ -40,6 +64,8 @@ public class AssignmentCreationService {
                 || new HashSet<>(request.rubricMaterialIds()).size() != request.rubricMaterialIds().size()) {
             throw new BadRequestException("请选择参考答案文件并填写 1～100 的总分，不要同时提交手工评分项");
         }
+        // 在插入作业取得外键共享锁前锁班级，避免并发创建时再升级为排他锁。
+        if (tags != null) tags.lockForCreation(teacher);
         List<RubricSourceView> sources = new ArrayList<>();
         StringBuilder snapshot = new StringBuilder();
         for (Long id : request.rubricMaterialIds()) {
@@ -67,8 +93,11 @@ public class AssignmentCreationService {
         } catch (RuntimeException exception) {
             throw new BadRequestException("参考答案保存失败");
         }
-        return assignments.createPrepared(request,
-                teacher, sourceJson, snapshot.toString());
+        var created = personalPractice
+                ? assignments.createPrepared(request, teacher, sourceJson, snapshot.toString(), true)
+                : assignments.createPrepared(request, teacher, sourceJson, snapshot.toString());
+        if (tags != null) tags.inherit(teacher, created.id(), request.rubricMaterialIds());
+        return created;
     }
 
 }

@@ -60,9 +60,21 @@ public class OpenAiChatGateway implements ChatGateway {
 
     @Override
     public String complete(List<ChatMessage> messages) {
+        return completeRequest(requestBody(messages, false));
+    }
+
+    @Override
+    public String completeBounded(List<ChatMessage> messages, int maxTokens) {
+        if (maxTokens < 1 || maxTokens > 4096) throw new IllegalArgumentException("Invalid output budget");
+        var body = requestBody(messages, false);
+        body.put("max_tokens", maxTokens);
+        return completeRequest(body);
+    }
+
+    private String completeRequest(Map<String, Object> body) {
         JsonNode response = requests.withClassifiedRetry("Chat service", () -> client.post()
                 .uri("/chat/completions")
-                .body(requestBody(messages, false))
+                .body(body)
                 .retrieve()
                 .body(JsonNode.class));
         String answer = response == null ? "" : response.path("choices").path(0)

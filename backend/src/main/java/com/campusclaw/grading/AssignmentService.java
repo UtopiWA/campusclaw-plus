@@ -55,6 +55,12 @@ public class AssignmentService {
     @Transactional
     public AssignmentView createPrepared(CreateAssignmentRequest request, UserAccount teacher,
                                           String sourceJson, String rubricText) {
+        return createPrepared(request, teacher, sourceJson, rubricText, false);
+    }
+
+    @Transactional
+    public AssignmentView createPrepared(CreateAssignmentRequest request, UserAccount teacher,
+                                         String sourceJson, String rubricText, boolean personalPractice) {
         List<RubricCriterion> criteria;
         long total;
         if (rubricText != null) {
@@ -88,6 +94,7 @@ public class AssignmentService {
         Assignment assignment = new Assignment(teacher.getClassId(), title, prompt,
                 rubrics.write(criteria), (int) total, teacher.getId());
         assignment.setRubricSources(sourceJson, rubricText);
+        if (personalPractice) assignment.markPersonalPractice();
         return view(assignments.saveAndFlush(assignment), null);
     }
 
@@ -97,9 +104,10 @@ public class AssignmentService {
         if (items.isEmpty()) return List.of();
         Map<Long, AssignmentView.MyLatestSubmission> latest = user.getRole() == Role.STUDENT
                 ? latestFor(user.getId(), items) : Map.of();
+        var tagRows = assignments.findTagsByClassId(user.getClassId());
         List<AssignmentView> views = new ArrayList<>(items.size());
         for (Assignment assignment : items) {
-            views.add(view(assignment, latest.get(assignment.getId())));
+            views.add(view(assignment, latest.get(assignment.getId()), tags(tagRows, assignment.getId())));
         }
         return views;
     }
@@ -107,20 +115,29 @@ public class AssignmentService {
     @Transactional(readOnly = true)
     public AssignmentView get(Long id, UserAccount user) {
         Assignment assignment = assignments.findByIdAndClassIdAndGradableTrue(id, user.getClassId())
-                .orElseThrow(NotFoundException::new);
+                .filter(a -> !a.isPersonalPractice()).orElseThrow(NotFoundException::new);
         AssignmentView.MyLatestSubmission latest = user.getRole() == Role.STUDENT
                 ? latestFor(assignment.getId(), user.getId()) : null;
-        return view(assignment, latest);
+        return view(assignment, latest, tags(assignments.findTagsByClassId(user.getClassId()), id));
     }
 
     @Transactional(readOnly = true)
     public Assignment requireForTeacher(Long id, UserAccount teacher) {
         return assignments.findByIdAndClassId(id, teacher.getClassId())
-                .filter(Assignment::isGradable)
+                .filter(a -> a.isGradable() && !a.isPersonalPractice())
                 .orElseThrow(NotFoundException::new);
     }
 
+    private List<AssignmentView.Tag> tags(List<Map<String, Object>> rows, long id) {
+        return rows.stream().filter(row -> ((Number) row.get("assignmentId")).longValue() == id)
+                .map(row -> new AssignmentView.Tag(((Number) row.get("id")).longValue(), row.get("name").toString())).toList();
+    }
+
     private AssignmentView view(Assignment assignment, AssignmentView.MyLatestSubmission latest) {
+        return view(assignment, latest, List.of());
+    }
+
+    private AssignmentView view(Assignment assignment, AssignmentView.MyLatestSubmission latest, List<AssignmentView.Tag> tags) {
         return new AssignmentView(
                 assignment.getId(),
                 assignment.getTitle(),
@@ -128,7 +145,7 @@ public class AssignmentService {
                 rubrics.parse(assignment.getRubricJson()),
                 assignment.getMaxScore() == null ? 0 : assignment.getMaxScore(),
                 assignment.getCreatedAt(),
-                latest, rubricSources(assignment));
+                latest, rubricSources(assignment), tags);
     }
 
     private List<RubricSourceView> rubricSources(Assignment assignment) {

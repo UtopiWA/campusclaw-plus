@@ -107,7 +107,7 @@ app:
     outbox-retry-delay: ${GRADING_OUTBOX_RETRY_DELAY:5s}
     outbox-batch-size: ${GRADING_OUTBOX_BATCH_SIZE:20}
     confirm-timeout: ${GRADING_CONFIRM_TIMEOUT:5s}
-    prompt-version: ${GRADING_PROMPT_VERSION:v4}
+    prompt-version: ${GRADING_PROMPT_VERSION:v5}
     exchange: ${GRADING_EXCHANGE:grading.events}
     task-queue: ${GRADING_TASK_QUEUE:grading.tasks}
     dead-letter-queue: ${GRADING_DLQ:grading.dlq}

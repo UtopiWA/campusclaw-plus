@@ -1,6 +1,7 @@
 package com.campusclaw;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -151,6 +152,13 @@ class CampusClawIntegrationTest {
     @Autowired com.campusclaw.grading.AssignmentService gradingAssignments;
     @Autowired com.campusclaw.grading.SubmissionService gradingSubmissions;
     @Autowired com.campusclaw.grading.GradingTaskCompletionService gradingCompletion;
+    @Autowired com.campusclaw.learning.QuestionBankService questionBank;
+    @Autowired com.campusclaw.learning.LearningCatalogService learningCatalog;
+    @Autowired com.campusclaw.learning.LearningStudyService learningStudy;
+    @Autowired com.campusclaw.learning.LearningPlanService learningPlans;
+    @Autowired com.campusclaw.grading.SubmissionReviewService gradingReviews;
+    @Autowired com.campusclaw.persistence.ClassRoomRepository learningClasses;
+    @Autowired com.campusclaw.persistence.AssignmentRepository learningAssignments;
     @MockitoSpyBean com.campusclaw.persistence.GradingOutboxRepository gradingOutbox;
 
     @BeforeEach
@@ -1146,6 +1154,629 @@ class CampusClawIntegrationTest {
                                 "rubricMaterialIds", java.util.List.of(bMaterial.getId())))))
                 .andExpect(status().isNotFound());
     }
+
+    @Test
+    void learningTeacherReviewReplacesAiEvidenceAndSubmittedAssignmentBindingsAreFrozen() throws Exception {
+        var fixture = learningFixture();
+        seedLearningTags(fixture);
+        var assignment = gradingAssignments.create(new com.campusclaw.grading.CreateAssignmentRequest(
+                "Learning evidence", "Explain", java.util.List.of(new com.campusclaw.grading.RubricCriterion(
+                        "understanding", "Correct explanation", 100))), fixture.teacher());
+        long pointId = learningPoint(fixture, "M04");
+        jdbc.update("INSERT INTO learning_assignment_points(assignment_id,class_id,point_id) VALUES(?,?,?)",
+                assignment.id(), fixture.teacher().getClassId(), pointId);
+        var accepted = gradingSubmissions.submit(assignment.id(), "Synthetic answer", "learning-evidence", fixture.student());
+        assertThat(learningStudy.evidence(fixture.student())).isEmpty();
+        jdbc.update("UPDATE grading_tasks SET status='RUNNING',attempts=1 WHERE task_id=?", accepted.taskId());
+        gradingCompletion.complete(accepted.taskId(), 1, accepted.submissionId(), 1,
+                new com.campusclaw.grading.GradingOutcome(40, 100, "[]", "Synthetic feedback", "stub", "v4"));
+        assertThat(learningStudy.evidence(fixture.student())).singleElement().satisfies(e -> assertThat(e.get("score")).isEqualTo(40));
+        gradingReviews.review(assignment.id(), accepted.submissionId(),
+                new com.campusclaw.grading.ReviewSubmissionRequest(90, "Reviewed"), fixture.teacher());
+        assertThat(learningStudy.evidence(fixture.student())).singleElement().satisfies(e -> assertThat(e.get("score")).isEqualTo(90));
+        mockMvc.perform(put("/api/learning/assignments/" + assignment.id() + "/points")
+                        .with(bearer(login(fixture.teacher().getUsername()))).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"pointIds\":[]}"))
+                .andExpect(status().isMethodNotAllowed());
+        assertThat(learningCatalog.assignmentPoints(fixture.student(), assignment.id())).hasSize(1);
+        var dashboard = learningStudy.dashboard(fixture.student());
+        var point = ((java.util.List<?>) dashboard.get("points")).stream()
+                .map(p -> (Map<?, ?>) p).filter(p -> p.get("id").equals(pointId)).findFirst().orElseThrow();
+        assertThat(point.get("mastery")).isEqualTo(90.0);
+    }
+
+    @Test
+    void emptyGoalsGenerateACachedSuggestedPlanAndInvalidBudgetsNeverCallModel() throws Exception {
+        var fixture = learningFixture();
+        seedLearningTags(fixture);
+        long reference = seedLearningResources(fixture);
+        String token = login(fixture.student().getUsername());
+        var suggested = (tools.jackson.databind.node.ObjectNode) objectMapper.readTree(modelPlan(fixture, reference, null, "Suggested plan"));
+        ((tools.jackson.databind.node.ObjectNode) suggested.path("tasks").path(0)).remove("questionIds");
+        when(chat.completeBounded(any(), anyInt())).thenReturn(objectMapper.writeValueAsString(suggested));
+        for (String body : java.util.List.of("{}", "{\"goal\":null}", "{\"goal\":\"   \"}", "{\"goal\":\"\",\"days\":7,\"dailyMinutes\":30}")) {
+            mockMvc.perform(post("/api/learning/plan").with(bearer(token)).contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.goal").value(""))
+                    .andExpect(jsonPath("$.days").value(7)).andExpect(jsonPath("$.dailyMinutes").value(30))
+                    .andExpect(jsonPath("$.revision").value(1));
+        }
+        for (String body : java.util.List.of("{\"days\":-1}", "{\"days\":0}", "{\"days\":15}", "{\"days\":1.5}",
+                "{\"dailyMinutes\":-1}", "{\"dailyMinutes\":9}", "{\"dailyMinutes\":121}", "{\"dailyMinutes\":30.5}",
+                "{\"days\":\"abc\"}", "{\"days\":2147483648}")) {
+            mockMvc.perform(post("/api/learning/plan").with(bearer(token)).contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest());
+        }
+        org.mockito.Mockito.verify(chat, org.mockito.Mockito.times(1)).completeBounded(any(), anyInt());
+        assertThat(learningPlans.current(fixture.student()).get("revision")).isEqualTo(1);
+    }
+
+    @Test
+    void modelPlansCachePreserveCompletedTasksAndKeepOldPlanOnFailure() throws Exception {
+        var fixture = learningFixture();
+        seedLearningTags(fixture);
+        long reference = seedLearningResources(fixture);
+        long question = ((Number) questionBank.save(fixture.teacher(), null, bankInput(reference, "Exercise")).get("id")).longValue();
+        when(chat.completeBounded(any(), anyInt())).thenAnswer(invocation -> {
+            assertThat(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            return modelPlan(fixture, reference, null, "Read examples");
+        });
+        var initial = learningPlans.generate(fixture.student(), "Improve math");
+        long planId = ((Number) initial.get("id")).longValue();
+        assertThat(initial.get("revision")).isEqualTo(1);
+        assertThat(initial).doesNotContainKeys("history", "handoffs", "generationClaim");
+        assertThat(learningPlans.generate(fixture.student(), "Improve math").get("revision")).isEqualTo(1);
+        org.mockito.Mockito.verify(chat, org.mockito.Mockito.times(1)).completeBounded(any(), anyInt());
+        long taskId = ((Number) ((Map<?, ?>) ((java.util.List<?>) initial.get("tasks")).get(0)).get("id")).longValue();
+        learningPlans.finish(fixture.student(), planId, taskId);
+        allowPlanRetry(planId);
+        when(chat.completeBounded(any(), anyInt())).thenReturn(modelPlan(fixture, reference, question, "Practice equations"));
+        var revised = learningPlans.generate(fixture.student(), "Review equations");
+        assertThat(revised.get("revision")).isEqualTo(2);
+        assertThat((java.util.List<?>) revised.get("tasks")).hasSize(2).anySatisfy(t ->
+                assertThat(((Map<?, ?>) t).get("status")).isEqualTo("DONE"));
+        mockMvc.perform(post("/api/learning/plans/" + planId + "/tasks/" + taskId + "/complete")
+                        .with(bearer(login("student-b1")))).andExpect(status().isNotFound());
+        allowPlanRetry(planId);
+        when(chat.completeBounded(any(), anyInt())).thenThrow(new IllegalStateException("private-provider-detail"));
+        mockMvc.perform(post("/api/learning/plan").contentType(MediaType.APPLICATION_JSON).content("{\"goal\":\"New target\"}")
+                        .with(bearer(login(fixture.student().getUsername()))))
+                .andExpect(status().isBadGateway()).andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("private-provider-detail"))));
+        assertThat(learningPlans.current(fixture.student()).get("revision")).isEqualTo(2);
+        mockMvc.perform(post("/api/learning/plan").contentType(MediaType.APPLICATION_JSON).content("{\"goal\":\"Math\",\"days\":15}")
+                        .with(bearer(login(fixture.student().getUsername())))).andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/learning/plan").contentType(MediaType.APPLICATION_JSON).content("{\"goal\":\"Math\"}")
+                        .with(bearer(login(fixture.teacher().getUsername())))).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/learning/plan")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void modelPlanClaimsPreventConcurrentAndLateWriters() throws Exception {
+        var fixture = learningFixture();
+        seedLearningTags(fixture);
+        long reference = seedLearningResources(fixture);
+        var entered = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        when(chat.completeBounded(any(), anyInt())).thenAnswer(invocation -> {
+            if (calls.incrementAndGet() == 1) {
+                entered.countDown();
+                awaitLatch(release);
+                return modelPlan(fixture, reference, null, "Old result");
+            }
+            return modelPlan(fixture, reference, null, "New result");
+        });
+        var older = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+            try { learningPlans.generate(fixture.student(), "Math"); return false; }
+            catch (com.campusclaw.common.ConflictException exception) { return true; }
+        });
+        assertThat(entered.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        long planId = jdbc.queryForObject("SELECT id FROM learning_plans WHERE student_id=?", Long.class, fixture.student().getId());
+        try {
+            assertThatThrownBy(() -> learningPlans.generate(fixture.student(), "Math"))
+                    .isInstanceOf(com.campusclaw.common.ConflictException.class);
+            jdbc.update("UPDATE learning_plans SET generation_started_at=? WHERE id=?",
+                    java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusSeconds(121), planId);
+            assertThat(learningPlans.generate(fixture.student(), "Math").get("message")).isEqualTo("New result");
+        } finally { release.countDown(); }
+        assertThat(older.get(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        assertThat(learningPlans.current(fixture.student()).get("message")).isEqualTo("New result");
+    }
+
+    @Test
+    void modelPlanRejectsChangedResourcesAndRollsBackTaskWriteFailure() throws Exception {
+        var fixture = learningFixture();
+        seedLearningTags(fixture);
+        long reference = seedLearningResources(fixture);
+        when(chat.completeBounded(any(), anyInt())).thenReturn(modelPlan(fixture, reference, null, "Original plan"));
+        long planId = ((Number) learningPlans.generate(fixture.student(), "Math").get("id")).longValue();
+        allowPlanRetry(planId);
+        when(chat.completeBounded(any(), anyInt())).thenAnswer(invocation -> {
+            learningCatalog.savePoint(fixture.teacher(), learningPoint(fixture, "M01"),
+                    new com.campusclaw.learning.LearningRequests.PointInput("M01", "Renamed tag", "Changed", true));
+            return modelPlan(fixture, reference, null, "Stale plan");
+        });
+        assertThatThrownBy(() -> learningPlans.generate(fixture.student(), "New goal"))
+                .isInstanceOf(com.campusclaw.common.ConflictException.class);
+        assertThat(learningPlans.current(fixture.student()).get("message")).isEqualTo("Original plan");
+        allowPlanRetry(planId);
+        when(chat.completeBounded(any(), anyInt())).thenReturn(modelPlan(fixture, reference, null, "Never committed"));
+        try (var connection = DriverManager.getConnection(MYSQL.getJdbcUrl(), "root", MYSQL.getPassword());
+             var statement = connection.createStatement()) {
+            statement.execute("CREATE TRIGGER deny_study_task BEFORE INSERT ON learning_plan_tasks FOR EACH ROW BEGIN "
+                    + "IF NEW.plan_id=" + planId + " THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='synthetic failure'; END IF; END");
+        }
+        try {
+            assertThatThrownBy(() -> learningPlans.generate(fixture.student(), "Changed goal")).isInstanceOf(org.springframework.dao.DataAccessException.class);
+        } finally {
+            try (var connection = DriverManager.getConnection(MYSQL.getJdbcUrl(), "root", MYSQL.getPassword());
+                 var statement = connection.createStatement()) {
+                statement.execute("DROP TRIGGER deny_study_task");
+            }
+        }
+        var kept = learningPlans.current(fixture.student());
+        assertThat(kept.get("revision")).isEqualTo(1);
+        assertThat(kept.get("message")).isEqualTo("Original plan");
+        assertThat(((java.util.List<?>) kept.get("tasks"))).hasSize(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM learning_plan_history WHERE plan_id=?", Integer.class, planId)).isEqualTo(1);
+    }
+
+    @Test
+    void plannedPracticeNeedsANewSuccessfulAttemptAndCompletedFactsSurviveReplacement() throws Exception {
+        var fixture = learningFixture();
+        seedLearningTags(fixture);
+        long reference = seedLearningResources(fixture);
+        long question = ((Number) questionBank.save(fixture.teacher(), null, bankInput(reference, "Practice")).get("id")).longValue();
+        completeBank(questionBank.submit(fixture.student(), question, "Old answer", "old"), 20);
+        when(chat.completeBounded(any(), anyInt())).thenReturn(modelPlan(fixture, reference, question, "Practice again"));
+        var plan = learningPlans.generate(fixture.student(), "Practice equations");
+        long planId = ((Number) plan.get("id")).longValue();
+        long taskId = ((Number) ((Map<?, ?>) ((java.util.List<?>) plan.get("tasks")).get(0)).get("id")).longValue();
+        assertThatThrownBy(() -> learningPlans.finish(fixture.student(), planId, taskId)).isInstanceOf(com.campusclaw.common.ConflictException.class);
+        var pending = questionBank.submit(fixture.student(), question, "Pending answer", "new");
+        assertThat(((Map<?, ?>) ((java.util.List<?>) learningPlans.current(fixture.student()).get("tasks")).get(0)).get("status")).isEqualTo("PENDING");
+        jdbc.update("UPDATE grading_tasks SET status='FAILED' WHERE task_id=?", pending.taskId());
+        assertThat(((Map<?, ?>) ((java.util.List<?>) learningPlans.current(fixture.student()).get("tasks")).get(0)).get("status")).isEqualTo("PENDING");
+        completeBank(questionBank.submit(fixture.student(), question, "New answer", "newer"), 50);
+        var finished = learningPlans.current(fixture.student());
+        assertThat(((Map<?, ?>) ((java.util.List<?>) finished.get("tasks")).get(0)).get("status")).isEqualTo("DONE");
+        assertThat(finished.get("message")).isEqualTo("Practice again");
+        questionBank.submit(fixture.student(), question, "Another answer", "last");
+        assertThat(((Map<?, ?>) ((java.util.List<?>) learningPlans.current(fixture.student()).get("tasks")).get(0)).get("status")).isEqualTo("DONE");
+    }
+
+    private void allowPlanRetry(long id) {
+        jdbc.update("UPDATE learning_plans SET generation_started_at=? WHERE id=?",
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusSeconds(16), id);
+    }
+
+    private String modelPlan(LearningFixture fixture, long material, Long question, String message) {
+        return objectMapper.writeValueAsString(Map.of("message", message, "tasks", java.util.List.of(Map.of(
+                "type", question == null ? "REVIEW" : "PRACTICE", "pointId", learningPoint(fixture, "M01"), "day", 1,
+                "minutes", 20, "materialIds", question == null ? java.util.List.of(material) : java.util.List.of(),
+                "questionIds", question == null ? java.util.List.of() : java.util.List.of(question), "instruction", message))));
+    }
+
+    @Test
+    void modelPlanMigrationFromV12PreservesLegacyCompletedTasks() throws Exception {
+        String database = "model_plan_upgrade";
+        recreateDatabaseAsContainerRoot(database);
+        String url = MYSQL.getJdbcUrl().replace("/campusclaw", "/" + database);
+        try {
+            Flyway.configure().dataSource(url, MYSQL.getUsername(), MYSQL.getPassword()).target("12").load().migrate();
+            try (var connection = DriverManager.getConnection(url, MYSQL.getUsername(), MYSQL.getPassword());
+                 var statement = connection.createStatement()) {
+                statement.executeUpdate("INSERT INTO classes(id,name) VALUES(1,'Plan upgrade fixture')");
+                statement.executeUpdate("INSERT INTO users(id,username,password_hash,role,class_id,enabled) VALUES(1,'synthetic-student','synthetic-not-used','STUDENT',1,TRUE)");
+                statement.executeUpdate("INSERT INTO learning_points(id,class_id,code,name,description,created_by,enabled,updated_at) VALUES(1,1,'M01','Existing tag','Keep',1,TRUE,NOW())");
+                statement.executeUpdate("INSERT INTO learning_plans(id,class_id,student_id,goal,revision,evidence_key,created_at,updated_at) VALUES(1,1,1,'Original goal',1,'old-key',NOW(),NOW())");
+                statement.executeUpdate("INSERT INTO learning_plan_tasks(plan_id,point_id,title,position_no,status,revision,resource_json,created_at,completed_at) VALUES(1,1,'Completed reading',0,'DONE',1,'{}',NOW(),NOW())");
+            }
+            Flyway.configure().dataSource(url, MYSQL.getUsername(), MYSQL.getPassword()).load().migrate();
+            try (var connection = DriverManager.getConnection(url, MYSQL.getUsername(), MYSQL.getPassword());
+                 var statement = connection.createStatement();
+                 var row = statement.executeQuery("SELECT p.goal,p.days,p.daily_minutes,p.generation_state,t.status FROM learning_plans p JOIN learning_plan_tasks t ON t.plan_id=p.id")) {
+                assertThat(row.next()).isTrue();
+                assertThat(row.getString(1)).isEqualTo("Original goal");
+                assertThat(row.getInt(2)).isEqualTo(7);
+                assertThat(row.getInt(3)).isEqualTo(30);
+                assertThat(row.getString(4)).isEqualTo("NONE");
+                assertThat(row.getString(5)).isEqualTo("DONE");
+            }
+        } finally { dropDatabaseAsContainerRoot(database); }
+    }
+
+    @Test
+    void learningMigrationFromV9KeepsExistingRowsAndChecksums() throws Exception {
+        String database = "learning_upgrade";
+        recreateDatabaseAsContainerRoot(database);
+        String url = MYSQL.getJdbcUrl().replace("/campusclaw", "/" + database);
+        try {
+            Flyway.configure().dataSource(url, MYSQL.getUsername(), MYSQL.getPassword()).target("9").load().migrate();
+            Map<Integer, Integer> checksums = new java.util.HashMap<>();
+            try (var connection = DriverManager.getConnection(url, MYSQL.getUsername(), MYSQL.getPassword());
+                 var statement = connection.createStatement()) {
+                statement.executeUpdate("INSERT INTO classes(id,name) VALUES(1,'Learning upgrade fixture')");
+                try (var rows = statement.executeQuery("SELECT installed_rank,checksum FROM flyway_schema_history WHERE success=TRUE")) {
+                    while (rows.next()) checksums.put(rows.getInt(1), rows.getInt(2));
+                }
+            }
+            Flyway.configure().dataSource(url, MYSQL.getUsername(), MYSQL.getPassword()).load().migrate();
+            try (var connection = DriverManager.getConnection(url, MYSQL.getUsername(), MYSQL.getPassword());
+                 var statement = connection.createStatement()) {
+                try (var row = statement.executeQuery("SELECT name FROM classes WHERE id=1")) {
+                    assertThat(row.next()).isTrue();
+                    assertThat(row.getString(1)).isEqualTo("Learning upgrade fixture");
+                }
+                try (var rows = statement.executeQuery("SELECT installed_rank,checksum FROM flyway_schema_history WHERE installed_rank<=9")) {
+                    while (rows.next()) assertThat(rows.getInt(2)).isEqualTo(checksums.get(rows.getInt(1)));
+                }
+                try (var row = statement.executeQuery("SELECT COUNT(*) FROM learning_points")) {
+                    assertThat(row.next()).isTrue();
+                    assertThat(row.getInt(1)).isZero();
+                }
+            }
+        } finally { dropDatabaseAsContainerRoot(database); }
+    }
+
+    @Test
+    void learningMigrationFromV11PreservesExistingTagsAndChecksums() throws Exception {
+        String database = "learning_tags_upgrade";
+        recreateDatabaseAsContainerRoot(database);
+        String url = MYSQL.getJdbcUrl().replace("/campusclaw", "/" + database);
+        try {
+            Flyway.configure().dataSource(url, MYSQL.getUsername(), MYSQL.getPassword()).target("11").load().migrate();
+            Map<Integer, Integer> checksums = new java.util.HashMap<>();
+            try (var connection = DriverManager.getConnection(url, MYSQL.getUsername(), MYSQL.getPassword());
+                 var statement = connection.createStatement()) {
+                statement.executeUpdate("INSERT INTO classes(id,name) VALUES(1,'Tag upgrade fixture')");
+                statement.executeUpdate("INSERT INTO users(id,username,password_hash,role,class_id,enabled) "
+                        + "VALUES(1,'synthetic-teacher','synthetic-not-used','TEACHER',1,TRUE)");
+                statement.executeUpdate("INSERT INTO learning_points(id,class_id,code,name,description,created_by,enabled,updated_at) "
+                        + "VALUES(1,1,'M01','Existing tag','Preserve',1,TRUE,NOW())");
+                try (var rows = statement.executeQuery("SELECT installed_rank,checksum FROM flyway_schema_history WHERE success=TRUE")) {
+                    while (rows.next()) checksums.put(rows.getInt(1), rows.getInt(2));
+                }
+            }
+            var flyway = Flyway.configure().dataSource(url, MYSQL.getUsername(), MYSQL.getPassword()).load();
+            flyway.migrate();
+            flyway.validate();
+            try (var connection = DriverManager.getConnection(url, MYSQL.getUsername(), MYSQL.getPassword());
+                 var statement = connection.createStatement()) {
+                try (var rows = statement.executeQuery("SELECT installed_rank,checksum FROM flyway_schema_history WHERE installed_rank<=11")) {
+                    while (rows.next()) assertThat(rows.getInt(2)).isEqualTo(checksums.get(rows.getInt(1)));
+                }
+                try (var row = statement.executeQuery("SELECT name FROM learning_points WHERE id=1")) {
+                    assertThat(row.next()).isTrue();
+                    assertThat(row.getString(1)).isEqualTo("Existing tag");
+                }
+                try (var row = statement.executeQuery("SELECT COUNT(*) FROM learning_assignment_tag_sources")) {
+                    assertThat(row.next()).isTrue();
+                    assertThat(row.getInt(1)).isZero();
+                }
+            }
+        } finally { dropDatabaseAsContainerRoot(database); }
+    }
+
+    @Test
+    void learningLectureTagsAreAtomicScopedAndInheritedOnlyAtAssignmentCreation() throws Exception {
+        var fixture = learningFixture();
+        seedLearningTags(fixture);
+        String teacher = login(fixture.teacher().getUsername());
+        long referenceId = learningAnswerMaterial(fixture, teacher);
+        long tag = learningPoint(fixture, "M02");
+        String path = "/api/learning/materials/" + referenceId + "/tags";
+        mockMvc.perform(put(path).with(bearer(login(fixture.student().getUsername()))).contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(Map.of("pointIds", java.util.List.of(tag)))))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(put(path).with(bearer(teacher)).contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(Map.of("pointIds", java.util.List.of(tag, tag)))))
+                .andExpect(status().isNoContent());
+        var other = learningFixture();
+        seedLearningTags(other);
+        mockMvc.perform(put(path).with(bearer(teacher)).contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(Map.of("pointIds", java.util.List.of(tag, learningPoint(other, "M01"))))))
+                .andExpect(status().isNotFound());
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM learning_point_materials WHERE material_id=?", Integer.class, referenceId)).isEqualTo(1);
+        mockMvc.perform(put(path).with(bearer(login(other.teacher().getUsername()))).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"pointIds\":[]}"))
+                .andExpect(status().isNotFound());
+        var created = mockMvc.perform(post("/api/assignments").with(bearer(teacher)).contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(Map.of("title", "Tagged assignment", "prompt", "Explain fractions", "maxScore", 100,
+                                "rubricMaterialIds", java.util.List.of(referenceId)))))
+                .andExpect(status().isCreated()).andReturn();
+        long assignmentId = ((Number) com.jayway.jsonpath.JsonPath.read(created.getResponse().getContentAsString(StandardCharsets.UTF_8), "$.id")).longValue();
+        learningTags.replace(fixture.teacher(), referenceId, java.util.List.of());
+        assertThat(learningCatalog.assignmentPoints(fixture.teacher(), assignmentId)).singleElement()
+                .satisfies(row -> assertThat(((Number) row.get("pointId")).longValue()).isEqualTo(tag));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM learning_assignment_tag_sources WHERE assignment_id=?", Integer.class, assignmentId)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM learning_point_materials WHERE material_id=?", Integer.class, referenceId)).isZero();
+        mockMvc.perform(post("/api/learning/tags").with(bearer(teacher)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"code\":\"NEW\",\"name\":\"分数运算\",\"description\":\"\",\"enabled\":true}"))
+                .andExpect(status().isConflict());
+        verifyNoInteractions(chat);
+    }
+
+    @Test
+    void learningTeacherRosterIncludesMoreThanTwoHundredStudentsInSubmissionTimeOrder() throws Exception {
+        var fixture = learningFixture();
+        var roster = new java.util.ArrayList<com.campusclaw.persistence.UserAccount>();
+        for (int i = 0; i < 204; i++) roster.add(new com.campusclaw.persistence.UserAccount(
+                "roster-" + java.util.UUID.randomUUID(), fixture.student().getPasswordHash(), com.campusclaw.persistence.Role.STUDENT, fixture.teacher().getClassId()));
+        users.saveAllAndFlush(roster);
+        var assignment = gradingAssignments.create(new com.campusclaw.grading.CreateAssignmentRequest("Roster", "Explain",
+                java.util.List.of(new com.campusclaw.grading.RubricCriterion("score", "Reasoning", 100))), fixture.teacher());
+        var first = gradingSubmissions.submit(assignment.id(), "First", "first", fixture.student());
+        var second = gradingSubmissions.submit(assignment.id(), "Second", "second", roster.get(0));
+        jdbc.update("UPDATE submissions SET created_at='2026-11-10 01:00:00' WHERE id=?", first.submissionId());
+        jdbc.update("UPDATE submissions SET created_at='2026-11-10 02:00:00' WHERE id=?", second.submissionId());
+        mockMvc.perform(get("/api/assignments/" + assignment.id() + "/submissions").with(bearer(login(fixture.teacher().getUsername()))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(205))
+                .andExpect(jsonPath("$[0].studentId").value(roster.get(0).getId()))
+                .andExpect(jsonPath("$[1].studentId").value(fixture.student().getId()))
+                .andExpect(jsonPath("$[2].status").value("NOT_SUBMITTED"))
+                .andExpect(jsonPath("$[2].submissionId").doesNotExist())
+                .andExpect(jsonPath("$[2].score").doesNotExist());
+        mockMvc.perform(get("/api/assignments/" + assignment.id() + "/submissions").with(bearer(login(fixture.student().getUsername()))))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/assignments/" + assignment.id() + "/submissions").with(bearer(login("teacher-a"))))
+                .andExpect(status().isNotFound());
+    }
+
+    @Autowired
+    private com.campusclaw.grading.AssignmentCreationService taggedAssignmentCreation;
+
+    @Test
+    void learningConcurrentReferenceAssignmentsKeepBothTagSnapshots() throws Exception {
+        var fixture = learningFixture();
+        seedLearningTags(fixture);
+        long referenceId = learningAnswerMaterial(fixture, login(fixture.teacher().getUsername()));
+        long tag = learningPoint(fixture, "M02");
+        learningTags.replace(fixture.teacher(), referenceId, java.util.List.of(tag));
+        var start = new java.util.concurrent.CountDownLatch(1);
+        var request = new com.campusclaw.grading.CreateAssignmentRequest("Concurrent", "Explain", null, 100, java.util.List.of(referenceId));
+        java.util.function.Supplier<Long> create = () -> {
+            awaitLatch(start);
+            return taggedAssignmentCreation.create(request, fixture.teacher()).id();
+        };
+        var first = java.util.concurrent.CompletableFuture.supplyAsync(create);
+        var second = java.util.concurrent.CompletableFuture.supplyAsync(create);
+        start.countDown();
+        long firstId = first.get(10, java.util.concurrent.TimeUnit.SECONDS);
+        long secondId = second.get(10, java.util.concurrent.TimeUnit.SECONDS);
+        assertThat(firstId).isNotEqualTo(secondId);
+        assertThat(learningCatalog.assignmentPoints(fixture.teacher(), firstId)).hasSize(1);
+        assertThat(learningCatalog.assignmentPoints(fixture.teacher(), secondId)).hasSize(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM learning_assignment_tag_sources WHERE assignment_id IN (?,?)", Integer.class,
+                firstId, secondId)).isEqualTo(2);
+        verifyNoInteractions(chat);
+    }
+
+    @Test
+    void questionBankIsPrivateAcrossEveryAssignmentAndGradingRoute() throws Exception {
+        var fixture = learningFixture();
+        seedLearningTags(fixture);
+        long reference = seedLearningResources(fixture);
+        var q = questionBank.save(fixture.teacher(), null, bankInput(reference, "Private question"));
+        long id = ((Number) q.get("id")).longValue();
+        var accepted = questionBank.submit(fixture.student(), id, "private synthetic answer", "bank-private");
+        String teacher = login(fixture.teacher().getUsername());
+        String student = login(fixture.student().getUsername());
+        var other = learningUser(com.campusclaw.persistence.Role.STUDENT, fixture.teacher().getClassId());
+        long internal = jdbc.queryForObject("SELECT assignment_id FROM question_bank WHERE id=?", Long.class, id);
+        mockMvc.perform(get("/api/questions/" + id)).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/questions/" + id).with(bearer(student))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.rubricSources").doesNotExist()).andExpect(jsonPath("$.myLatest.submissionContent").value("private synthetic answer"));
+        mockMvc.perform(get("/api/questions/" + id).with(bearer(teacher))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.myLatest").doesNotExist());
+        mockMvc.perform(get("/api/questions/" + id + "/response").with(bearer(teacher))).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/grading/tasks/" + accepted.taskId()).with(bearer(teacher))).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/grading/tasks/" + accepted.taskId()).with(bearer(login(other.getUsername())))).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/assignments/" + internal).with(bearer(student))).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/assignments/" + internal + "/submissions").with(bearer(teacher))).andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/assignments/" + internal + "/submissions").with(bearer(student)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"bypass\"}")).andExpect(status().isNotFound());
+        mockMvc.perform(put("/api/assignments/" + internal + "/submissions/" + accepted.submissionId() + "/review")
+                        .with(bearer(teacher)).contentType(MediaType.APPLICATION_JSON).content("{\"score\":80,\"comment\":\"bypass\"}"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/assignments").with(bearer(teacher))).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+        mockMvc.perform(post("/api/questions").with(bearer(student)).contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(bankInput(reference, "Forbidden")))).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/questions/" + id).with(bearer(login("student-b1")))).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/learning/questions").with(bearer(teacher))).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/learning/practices").with(bearer(student))).andExpect(status().isNotFound());
+        assertThat(learningStudy.evidence(fixture.student())).isEmpty();
+    }
+
+    @Test
+    void questionBankResubmissionReplacesBodiesScoresAndEvidenceWithoutChangingOtherStudents() throws Exception {
+        var fixture = learningFixture();
+        seedLearningTags(fixture);
+        long reference = seedLearningResources(fixture);
+        long id = ((Number) questionBank.save(fixture.teacher(), null, bankInput(reference, "Fractions")).get("id")).longValue();
+        var other = learningUser(com.campusclaw.persistence.Role.STUDENT, fixture.teacher().getClassId());
+        var first = questionBank.submit(fixture.student(), id, "first-private", "request-one");
+        assertThat(questionBank.submit(fixture.student(), id, "first-private", "request-one").taskId()).isEqualTo(first.taskId());
+        assertThatThrownBy(() -> questionBank.submit(fixture.student(), id, "second-private", "request-two"))
+                .isInstanceOf(com.campusclaw.common.ConflictException.class);
+        completeBank(first, 20);
+        var independent = questionBank.submit(other, id, "other-private", "other-request");
+        completeBank(independent, 80);
+        assertThat(learningStudy.evidence(fixture.student())).hasSize(6);
+        org.mockito.Mockito.doThrow(new IllegalStateException("synthetic-outbox-failure")).when(gradingOutbox)
+                .save(any(com.campusclaw.persistence.GradingOutbox.class));
+        assertThatThrownBy(() -> questionBank.submit(fixture.student(), id, "rollback-answer", "rollback-request"))
+                .isInstanceOf(IllegalStateException.class);
+        reset(gradingOutbox);
+        assertThat(questionBank.latest(fixture.student(), id).submissionContent()).isEqualTo("first-private");
+        assertThat(questionBank.latest(fixture.student(), id).result().score()).isEqualTo(20);
+        assertThatThrownBy(() -> questionBank.submit(fixture.student(), id, " ", "invalid-request"))
+                .isInstanceOf(com.campusclaw.common.BadRequestException.class);
+        assertThat(questionBank.latest(fixture.student(), id).result().score()).isEqualTo(20);
+        var second = questionBank.submit(fixture.student(), id, "second-private", "request-two");
+        assertThat(questionBank.latest(fixture.student(), id).result()).isNull();
+        assertThat(learningStudy.evidence(fixture.student())).isEmpty();
+        assertThat(jdbc.queryForObject("SELECT content FROM submissions WHERE id=?", String.class, first.submissionId())).isEmpty();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM grading_results WHERE submission_id=?", Integer.class, first.submissionId())).isZero();
+        assertThat(gradingCompletion.complete(first.taskId(), 1, first.submissionId(), 1,
+                new com.campusclaw.grading.GradingOutcome(99, 100, "[]", "late", "stub", "v4"))).isFalse();
+        completeBank(second, 90);
+        assertThat(learningStudy.evidence(fixture.student())).hasSize(6).allSatisfy(e -> assertThat(e.get("score")).isEqualTo(90));
+        var points = (java.util.List<?>) learningStudy.dashboard(fixture.student()).get("points");
+        assertThat(((Map<?, ?>) points.get(0)).get("sampleCount")).isEqualTo(1);
+        assertThat(((Map<?, ?>) points.get(0)).get("mastery")).isEqualTo(90.0);
+        assertThat(questionBank.latest(other, id).submissionContent()).isEqualTo("other-private");
+        assertThat(questionBank.latest(other, id).result().score()).isEqualTo(80);
+        mockMvc.perform(get("/api/grading/tasks/" + first.taskId()).with(bearer(login(fixture.student().getUsername()))))
+                .andExpect(status().isNotFound());
+        jdbc.update("UPDATE grading_tasks SET status='FAILED' WHERE task_id=?", second.taskId());
+        assertThat(questionBank.submit(fixture.student(), id, "try-after-failure", "request-three").status()).isEqualTo("PENDING");
+    }
+
+    @Test
+    void questionBankConcurrentSubmissionsHaveOneCurrentTaskAndEditsKeepTheSubmittedReference() throws Exception {
+        var fixture = learningFixture();
+        seedLearningTags(fixture);
+        long reference = seedLearningResources(fixture);
+        long id = ((Number) questionBank.save(fixture.teacher(), null, bankInput(reference, "Original prompt")).get("id")).longValue();
+        var start = new java.util.concurrent.CountDownLatch(1);
+        java.util.function.Function<String, Boolean> submit = key -> {
+            awaitLatch(start);
+            try { questionBank.submit(fixture.student(), id, "answer-" + key, key); return true; }
+            catch (com.campusclaw.common.ConflictException exception) { return false; }
+        };
+        var a = java.util.concurrent.CompletableFuture.supplyAsync(() -> submit.apply("concurrent-a"));
+        var b = java.util.concurrent.CompletableFuture.supplyAsync(() -> submit.apply("concurrent-b"));
+        start.countDown();
+        assertThat(java.util.List.of(a.get(10, java.util.concurrent.TimeUnit.SECONDS), b.get(10, java.util.concurrent.TimeUnit.SECONDS)))
+                .containsExactlyInAnyOrder(true, false);
+        var current = questionBank.latest(fixture.student(), id);
+        questionBank.save(fixture.teacher(), id, bankInput(reference, "Changed prompt"));
+        when(chat.complete(any())).thenAnswer(invocation -> {
+            assertThat(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            var messages = (java.util.List<com.campusclaw.gateway.ChatGateway.ChatMessage>) invocation.getArgument(0);
+            assertThat(messages.get(1).content()).contains("Original prompt").doesNotContain("Changed prompt");
+            return "{\"score\":75,\"rationale\":\"依据原题批改\"}";
+        });
+        var submitted = gradingSubmissionRepository.findById(current.submissionId()).orElseThrow();
+        var snapshot = learningAssignments.findById(submitted.getAssignmentId()).orElseThrow();
+        assertThat(gradingModel.grade(snapshot, submitted).score()).isEqualTo(75);
+        assertThat(questionBank.get(fixture.student(), id).get("questionChanged")).isEqualTo(true);
+        mockMvc.perform(post("/api/questions/" + id + "/responses").with(bearer(login(fixture.student().getUsername())))
+                        .header("If-Match", snapshot.getId()).contentType(MediaType.APPLICATION_JSON).content("{\"content\":\"stale question answer\"}"))
+                .andExpect(status().isConflict());
+        questionBank.availability(fixture.teacher(), id, false);
+        assertThat(questionBank.list(fixture.student())).isEmpty();
+        assertThatThrownBy(() -> questionBank.get(fixture.student(), id)).isInstanceOf(com.campusclaw.common.NotFoundException.class);
+        questionBank.availability(fixture.teacher(), id, true);
+        questionBank.delete(fixture.teacher(), id);
+        assertThat(questionBank.list(fixture.teacher())).isEmpty();
+    }
+
+    @Test
+    void questionBankMasteryUsesEqualStudentWeightsAndSkipsUnattemptedQuestions() throws Exception {
+        var fixture = learningFixture();
+        seedLearningTags(fixture);
+        long reference = seedLearningResources(fixture);
+        var other = learningUser(com.campusclaw.persistence.Role.STUDENT, fixture.teacher().getClassId());
+        learningUser(com.campusclaw.persistence.Role.STUDENT, fixture.teacher().getClassId());
+        long firstId = 0;
+        for (int i = 0; i < 20; i++) {
+            long id = ((Number) questionBank.save(fixture.teacher(), null, bankInput(reference, "Question " + i)).get("id")).longValue();
+            if (i == 0) firstId = id;
+            completeBank(questionBank.submit(fixture.student(), id, "Answer", "answer-" + i), 100);
+        }
+        completeBank(questionBank.submit(other, firstId, "Different answer", "other-answer"), 0);
+        questionBank.save(fixture.teacher(), null, bankInput(reference, "Not required"));
+        String teacher = login(fixture.teacher().getUsername());
+        mockMvc.perform(get("/api/learning/analytics").with(bearer(teacher))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.points[0].mastery").value(50.0)).andExpect(jsonPath("$.points[0].participants").value(2))
+                .andExpect(jsonPath("$.points[0].notParticipating").value(1)).andExpect(jsonPath("$.points[0].attempts").value(21))
+                .andExpect(jsonPath("$.points[0].errorTypes").doesNotExist()).andExpect(jsonPath("$.points[0].students[0].answer").doesNotExist());
+        mockMvc.perform(get("/api/learning/analytics?from=2020-01-01&to=2020-01-02").with(bearer(teacher))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.points[0].participants").value(0));
+        mockMvc.perform(get("/api/learning/analytics?from=oops").with(bearer(teacher))).andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/learning/analytics?from=2020-01-01&to=2026-01-01").with(bearer(teacher))).andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void legacyPublishedObjectiveAssignmentStillUsesItsOriginalSnapshot() throws Exception {
+        var fixture = learningFixture();
+        seedLearningTags(fixture);
+        long point = learningPoint(fixture, "M02");
+        jdbc.update("""
+                INSERT INTO learning_questions(class_id,code,point_id,prompt,kind,options_json,answer,explanation,
+                difficulty,enabled,created_by,updated_at) VALUES(?,'LEGACY',?,'Fractions','NUMBER','[]','3/4','Reference',1,TRUE,?,NOW())
+                """, fixture.teacher().getClassId(), point, fixture.teacher().getId());
+        long question = jdbc.queryForObject("SELECT id FROM learning_questions WHERE class_id=? AND code='LEGACY'", Long.class,
+                fixture.teacher().getClassId());
+        var assigned = gradingAssignments.createPrepared(new com.campusclaw.grading.CreateAssignmentRequest("Legacy", "Fractions", null, 80, null),
+                fixture.teacher(), "[]", "Reference: 3/4");
+        jdbc.update("""
+                INSERT INTO learning_question_assignments(assignment_id,class_id,question_id,kind,expected_answer,explanation,created_at)
+                VALUES(?,?,?,'NUMBER','3/4','Frozen reference',NOW())
+                """, assigned.id(), fixture.teacher().getClassId(), question);
+        jdbc.update("UPDATE learning_questions SET answer='999' WHERE id=?", question);
+        var response = gradingSubmissions.submit(assigned.id(), "0.75", "legacy-answer", fixture.student());
+        var outcome = gradingModel.grade(learningAssignments.findById(assigned.id()).orElseThrow(),
+                gradingSubmissionRepository.findById(response.submissionId()).orElseThrow());
+        assertThat(outcome.score()).isEqualTo(80);
+        assertThat(outcome.modelName()).isEqualTo("rule-math-v1");
+        verifyNoInteractions(chat);
+    }
+
+    private void completeBank(com.campusclaw.grading.SubmitAssignmentResponse response, int score) {
+        jdbc.update("UPDATE grading_tasks SET status='RUNNING',attempts=1 WHERE task_id=?", response.taskId());
+        gradingCompletion.complete(response.taskId(), 1, response.submissionId(), response.version(),
+                new com.campusclaw.grading.GradingOutcome(score, 100, "[]", "Synthetic reference-based feedback", "stub", "v4"));
+    }
+
+    private com.campusclaw.learning.QuestionBankRequests.Question bankInput(long reference, String title) {
+        return new com.campusclaw.learning.QuestionBankRequests.Question(title, title, 100, java.util.List.of(reference), true);
+    }
+
+    private void seedLearningTags(LearningFixture fixture) {
+        String[] names = {"有理数运算", "分数运算", "等式性质", "一元一次方程", "正比例", "一次函数"};
+        for (int i = 0; i < names.length; i++) learningCatalog.savePoint(fixture.teacher(), null,
+                new com.campusclaw.learning.LearningRequests.PointInput("M0" + (i + 1), names[i], "Synthetic math tag", true));
+    }
+
+    private long seedLearningResources(LearningFixture fixture) throws Exception {
+        long material = learningAnswerMaterial(fixture, login(fixture.teacher().getUsername()));
+        learningTags.replace(fixture.teacher(), material, java.util.stream.IntStream.rangeClosed(1, 6)
+                .mapToObj(i -> learningPoint(fixture, "M0" + i)).toList());
+        return material;
+    }
+
+    private long learningAnswerMaterial(LearningFixture fixture, String teacher) throws Exception {
+        var response = mockMvc.perform(multipart("/api/materials/upload").file(new MockMultipartFile("file", "answer.md",
+                        "text/markdown", "# Synthetic reference\nAnswer: 3/4\n".getBytes(StandardCharsets.UTF_8))).with(bearer(teacher)))
+                .andExpect(status().isCreated()).andReturn();
+        long id = ((Number) com.jayway.jsonpath.JsonPath.read(response.getResponse().getContentAsString(StandardCharsets.UTF_8), "$.materialId")).longValue();
+        awaitMaterialStatus(id, "READY");
+        return id;
+    }
+
+    @Autowired
+    private com.campusclaw.learning.MaterialTagService learningTags;
+
+    private LearningFixture learningFixture() {
+        var room = learningClasses.saveAndFlush(new com.campusclaw.persistence.ClassRoom("learning-" + java.util.UUID.randomUUID()));
+        return new LearningFixture(learningUser(com.campusclaw.persistence.Role.TEACHER, room.getId()),
+                learningUser(com.campusclaw.persistence.Role.STUDENT, room.getId()));
+    }
+
+    private com.campusclaw.persistence.UserAccount learningUser(com.campusclaw.persistence.Role role, long classId) {
+        return users.saveAndFlush(new com.campusclaw.persistence.UserAccount("learning-" + java.util.UUID.randomUUID(),
+                passwordEncoder.encode(DEMO_PASSWORD), role, classId));
+    }
+
+    private long learningPoint(LearningFixture fixture, String code) {
+        return jdbc.queryForObject("SELECT id FROM learning_points WHERE class_id=? AND code=?", Long.class,
+                fixture.teacher().getClassId(), code);
+    }
+
+    private record LearningFixture(com.campusclaw.persistence.UserAccount teacher, com.campusclaw.persistence.UserAccount student) { }
 
     private static void awaitLatch(java.util.concurrent.CountDownLatch latch) {
         try {

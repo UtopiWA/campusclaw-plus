@@ -1,4 +1,5 @@
 <script setup>
+import PagedList from '../components/PagedList.vue'
 import { feedbackRef } from '../services/feedback.js'
 import { computed, onMounted, reactive, ref } from 'vue'
 import AppIcon from '../components/AppIcon.vue'
@@ -314,7 +315,7 @@ onMounted(load)
       <section class="config-panel" :class="{ 'content-card config-card': tab !== 'mcp' }" :aria-busy="loading">
         <div v-if="loading" class="empty-state"><p>正在加载配置…</p></div>
         <div v-else-if="tab === 'assistants'" class="config-grid">
-          <article v-for="item in assistants" :key="item.id" class="config-item">
+          <PagedList :items="assistants" label="智能体"  v-slot="{ pageItems }"><article v-for="item in pageItems" :key="item.id" class="config-item">
             <div class="config-item-icon"><AppIcon name="bot" /></div>
             <div class="config-item-body">
               <div class="config-item-title"><h2>{{ item.name }}</h2><span class="index-badge" :class="item.enabled ? 'index-badge--ready' : 'tag--muted'">{{ item.enabled ? '已启用' : '已停用' }}</span></div>
@@ -326,11 +327,11 @@ onMounted(load)
               <button class="button button--soft" type="button" @click="editAssistant(item)"><AppIcon name="edit" :size="15" />编辑</button>
               <button class="icon-button icon-button--danger" type="button" :aria-label="`删除智能体 ${item.name}`" @click="deleteTarget = { type: 'assistant', item }"><AppIcon name="trash" /></button>
             </div>
-          </article>
+          </article></PagedList>
           <div v-if="!assistants.length" class="empty-state"><span><AppIcon name="bot" /></span><h3>还没有智能体</h3><p>先创建一个用于学生会话的教学助手。</p></div>
         </div>
         <div v-else-if="tab === 'skills'" class="config-grid">
-          <article v-for="item in skills" :key="item.id" class="config-item">
+          <PagedList :items="skills" label="技能"  v-slot="{ pageItems }"><article v-for="item in pageItems" :key="item.id" class="config-item">
             <div class="config-item-icon config-item-icon--skill"><AppIcon name="layers" /></div>
             <div class="config-item-body">
               <div class="config-item-title"><h2>{{ item.name }}</h2><span class="index-badge" :class="item.enabled ? 'index-badge--ready' : 'tag--muted'">{{ item.enabled ? '已启用' : '已停用' }}</span></div>
@@ -346,14 +347,14 @@ onMounted(load)
               <label class="toggle-switch" :title="item.enabled ? '停用技能' : '启用技能'"><input type="checkbox" :checked="item.enabled" :disabled="togglingSkillIds.has(item.id)" :aria-label="`${item.enabled ? '停用' : '启用'}技能 ${item.name}`" @change="toggleSkill(item, $event.target.checked)" /><span></span></label>
               <button class="icon-button" type="button" aria-label="编辑技能" @click="editSkill(item)"><AppIcon name="edit" /></button><button class="icon-button icon-button--danger" type="button" aria-label="删除技能" @click="deleteTarget = { type: 'skill', item }"><AppIcon name="trash" /></button>
             </div>
-          </article>
-          <div v-if="!skills.length" class="empty-state"><span><AppIcon name="layers" /></span><h3>还没有技能</h3><p>通过结构化文本添加一个确定性路由技能。</p></div>
+          </article></PagedList>
+          <div v-if="!skills.length" class="empty-state"><span><AppIcon name="layers" /></span><h3>还没有技能</h3><p>添加技能，为助手设置学习任务。</p></div>
         </div>
         <div v-else class="mcp-config">
           <section class="content-card mcp-services-panel">
             <header class="mcp-section-heading"><div><h2>MCP 服务与工具</h2><p>管理服务连接，并查看最近一次发现的工具定义。</p></div><span>{{ mcpTools.length }} 个已发现工具</span></header>
             <div class="config-grid">
-            <article v-for="item in mcpServers" :key="item.id" class="config-item">
+            <PagedList :items="mcpServers" label="MCP服务器"  v-slot="{ pageItems }"><article v-for="item in pageItems" :key="item.id" class="config-item">
               <div class="config-item-icon config-item-icon--skill"><AppIcon name="layers" /></div>
               <div class="config-item-body">
                 <div class="config-item-title"><h2>{{ item.name }}</h2><span class="index-badge" :class="item.connected ? 'index-badge--ready' : 'tag--muted'">{{ item.connected ? '已连接' : '未连接' }}</span></div>
@@ -366,30 +367,30 @@ onMounted(load)
                 <button class="icon-button icon-button--danger" type="button" aria-label="删除 MCP 服务" @click="deleteTarget = { type: 'mcp', item }"><AppIcon name="trash" /></button>
               </div>
               <div v-if="toolsForServer(item.id).length" class="mcp-tool-list" aria-label="已发现工具">
-                <article v-for="tool in toolsForServer(item.id)" :key="tool.id" class="mcp-tool-item">
+                <PagedList :items="toolsForServer(item.id)" label="服务器工具"  v-slot="{ pageItems }"><article v-for="tool in pageItems" :key="tool.id" class="mcp-tool-item">
                   <div><strong>{{ toolDisplayName(tool.name) }}</strong><code>{{ tool.name }}</code></div>
                   <p>{{ tool.description }}</p>
                   <small>输入：{{ schemaSummary(tool.inputSchema) }}（* 为必填）</small>
-                </article>
+                </article></PagedList>
               </div>
-            </article>
-            <div v-if="!mcpServers.length" class="empty-state"><span><AppIcon name="layers" /></span><h3>还没有 MCP 服务</h3><p>登记服务并连接后，工具会出现在技能编辑器中。</p></div>
+            </article></PagedList>
+            <div v-if="!mcpServers.length" class="empty-state"><span><AppIcon name="layers" /></span><h3>还没有 MCP 服务</h3><p>连接服务以发现工具。</p></div>
             </div>
           </section>
           <section class="content-card mcp-audit">
-            <header class="mcp-section-heading"><div><h2>最近工具调用</h2><p>最近 50 次调用。</p></div></header>
+            <header class="mcp-section-heading"><div><h2>最近工具调用</h2></div></header>
             <div class="mcp-audit-metrics" aria-label="近期调用统计">
-              <article><span>近期调用</span><strong>{{ mcpAuditStats.total }}</strong><small>当前列表</small></article>
-              <article><span>成功调用</span><strong>{{ mcpAuditStats.success }}</strong><small>状态为成功</small></article>
-              <article><span>平均耗时</span><strong>{{ mcpAuditStats.average === null ? '—' : `${mcpAuditStats.average} ms` }}</strong><small>仅统计已记录项</small></article>
+              <article><span>近50次调用</span><strong>{{ mcpAuditStats.total }}</strong></article>
+              <article><span>成功调用</span><strong>{{ mcpAuditStats.success }}</strong></article>
+              <article><span>平均耗时</span><strong>{{ mcpAuditStats.average === null ? '—' : `${mcpAuditStats.average} ms` }}</strong></article>
             </div>
             <div class="mcp-audit-table" role="table" aria-label="MCP 调用审计">
               <div v-if="mcpCalls.length" class="mcp-audit-row mcp-audit-row--head" role="row">
                 <span role="columnheader">时间</span><span role="columnheader">调用用户</span><span role="columnheader">工具</span><span role="columnheader">状态</span><span role="columnheader">耗时</span>
               </div>
-              <div v-for="call in mcpCalls" :key="call.id" class="mcp-audit-row" role="row">
+              <PagedList :items="mcpCalls" label="工具调用"  v-slot="{ pageItems }"><div v-for="call in pageItems" :key="call.id" class="mcp-audit-row" role="row">
                 <time role="cell">{{ new Date(call.createdAt).toLocaleString() }}</time><strong class="mcp-audit-actor" role="cell">{{ auditActorLabel(call) }}</strong><span class="mcp-audit-tool" role="cell"><strong>{{ toolDisplayName(call.toolRef) }}</strong><code>{{ call.toolRef }}</code></span><span role="cell" :class="`tool-status tool-status--${call.status}`">{{ auditStatusLabel(call.status) }}</span><span class="mcp-audit-duration" role="cell">{{ formatDuration(call.durationMs) }}</span>
-              </div>
+              </div></PagedList>
               <p v-if="!mcpCalls.length">暂无工具调用记录。</p>
             </div>
           </section>
@@ -397,18 +398,18 @@ onMounted(load)
       </section>
     </div>
 
-    <BaseModal v-if="assistantOpen" :title="assistantDraft.id ? '编辑智能体' : '新建智能体'" description="保存时会完整替换技能和讲义绑定。" wide @close="!saving && (assistantOpen = false)">
+    <BaseModal v-if="assistantOpen" :title="assistantDraft.id ? '编辑智能体' : '新建智能体'" wide @close="!saving && (assistantOpen = false)">
       <form id="assistant-form" class="config-form" @submit.prevent="saveAssistant">
         <label>名称<input v-model="assistantDraft.name" required maxlength="64" /></label>
         <label>角色提示词<textarea v-model="assistantDraft.promptText" rows="6" maxlength="2000" placeholder="留空时使用平台默认教学助手角色" /></label>
-        <fieldset><legend>绑定技能</legend><div class="option-grid"><label v-for="item in skills" :key="item.id"><input v-model="assistantDraft.skillIds" type="checkbox" :value="item.id" /><span><strong>{{ item.name }}</strong><small>{{ item.triggerText }}</small></span></label><p v-if="!skills.length">暂无可绑定技能</p></div></fieldset>
-        <fieldset><legend>绑定 READY 讲义</legend><div class="option-grid"><label v-for="item in readyMaterials" :key="item.id"><input v-model="assistantDraft.materialIds" type="checkbox" :value="item.id" /><span><strong>{{ item.title }}</strong><small>{{ item.originalFilename || '虚拟材料' }}</small></span></label><p v-if="!readyMaterials.length">暂无已完成索引的讲义</p></div></fieldset>
+        <fieldset><legend>绑定技能</legend><div class="option-grid"><PagedList :items="skills" label="可选技能"  v-slot="{ pageItems }"><label v-for="item in pageItems" :key="item.id"><input v-model="assistantDraft.skillIds" type="checkbox" :value="item.id" /><span><strong>{{ item.name }}</strong><small>{{ item.triggerText }}</small></span></label></PagedList><p v-if="!skills.length">暂无可绑定技能</p></div></fieldset>
+        <fieldset><legend>绑定 READY 讲义</legend><div class="option-grid"><PagedList :items="readyMaterials" label="可选讲义"  v-slot="{ pageItems }"><label v-for="item in pageItems" :key="item.id"><input v-model="assistantDraft.materialIds" type="checkbox" :value="item.id" /><span><strong>{{ item.title }}</strong><small>{{ item.originalFilename || '虚拟材料' }}</small></span></label></PagedList><p v-if="!readyMaterials.length">暂无已完成索引的讲义</p></div></fieldset>
 
       </form>
       <template #footer><button class="button button--secondary" type="button" :disabled="saving" @click="assistantOpen = false">取消</button><button class="button button--primary" form="assistant-form" type="submit" :disabled="saving">{{ saving ? '保存中…' : '保存配置' }}</button></template>
     </BaseModal>
 
-    <BaseModal v-if="skillOpen" :title="skillDraft.id ? '编辑技能' : '新建技能'" description="填写触发规则和执行行为，保存时仍由服务端统一校验。" wide @close="!saving && (skillOpen = false)">
+    <BaseModal v-if="skillOpen" :title="skillDraft.id ? '编辑技能' : '新建技能'" wide @close="!saving && (skillOpen = false)">
       <form id="skill-form" class="config-form" @submit.prevent="saveSkill">
         <div class="skill-editor-toolbar"><span>结构化技能定义</span><button class="button button--soft" type="button" @click="importInput?.click()"><AppIcon name="upload" :size="15" />导入文本</button><input ref="importInput" class="sr-only" type="file" accept="text/plain,.txt,.md" @change="importSkill" /></div>
         <div class="skill-form-grid">
@@ -419,8 +420,8 @@ onMounted(load)
         </div>
         <label class="switch-field"><input v-model="skillDraft.enabled" type="checkbox" /><span>创建后立即启用</span></label>
         <fieldset class="skill-tools"><legend>绑定工具</legend>
-          <label><input v-model="skillDraft.toolRefs" type="checkbox" value="knowledge_search" /><span><strong>知识检索</strong><small>回答前检索智能体绑定的讲义（knowledge_search）</small></span></label>
-          <label v-for="tool in selectableToolRefs" :key="tool.ref"><input v-model="skillDraft.toolRefs" type="checkbox" :value="tool.ref" /><span><strong>{{ toolReferenceLabel(tool.ref) }}</strong><small>{{ tool.description }}</small></span></label>
+          <label><input v-model="skillDraft.toolRefs" type="checkbox" value="knowledge_search" /><span><strong>知识检索</strong><small>检索助手绑定的讲义</small></span></label>
+          <PagedList :items="selectableToolRefs" label="可选工具"  v-slot="{ pageItems }"><label v-for="tool in pageItems" :key="tool.ref"><input v-model="skillDraft.toolRefs" type="checkbox" :value="tool.ref" /><span><strong>{{ toolReferenceLabel(tool.ref) }}</strong><small>{{ tool.description }}</small></span></label></PagedList>
           <p v-if="!mcpTools.length">连接 MCP 服务后可选择外部工具。</p>
         </fieldset>
 
@@ -428,7 +429,7 @@ onMounted(load)
       <template #footer><button class="button button--secondary" type="button" :disabled="saving" @click="skillOpen = false">取消</button><button class="button button--primary" form="skill-form" type="submit" :disabled="saving">{{ saving ? '保存中…' : '保存技能' }}</button></template>
     </BaseModal>
 
-    <BaseModal v-if="mcpOpen" :title="mcpDraft.id ? '编辑 MCP 服务' : '登记 MCP 服务'" description="凭据只提交给后端；留空表示编辑时保持原值。" @close="!saving && (mcpOpen = false)">
+    <BaseModal v-if="mcpOpen" :title="mcpDraft.id ? '编辑 MCP 服务' : '登记 MCP 服务'" @close="!saving && (mcpOpen = false)">
       <form id="mcp-form" class="config-form" @submit.prevent="saveMcp">
         <label>服务名<input v-model="mcpDraft.name" required maxlength="32" placeholder="campus-tools" /></label>
         <label>Base URL<input v-model="mcpDraft.baseUrl" required maxlength="512" placeholder="http://mcp-demo:8090" /></label>
@@ -439,7 +440,7 @@ onMounted(load)
     </BaseModal>
 
     <BaseModal v-if="deleteTarget" :title="deleteTarget.type === 'assistant' ? '删除智能体' : deleteTarget.type === 'skill' ? '删除技能' : '删除 MCP 服务'" :description="deleteTarget.type === 'assistant' ? '只有尚未产生历史消息的智能体可以删除。' : deleteTarget.type === 'skill' ? '此操作会解除所有智能体对该技能的绑定。' : '已有调用审计的服务不能删除，可以改为断开。'" @close="!saving && (deleteTarget = null)">
-      <div class="delete-warning"><span><AppIcon name="trash" /></span><p v-if="deleteTarget.type === 'assistant'">确定删除“{{ deleteTarget.item.name }}”吗？零消息空会话会自动清理；如果已有真实消息，系统会拒绝删除并建议停用。</p><p v-else-if="deleteTarget.type === 'skill'">确定删除“{{ deleteTarget.item.name }}”吗？讲义和智能体本身不会被删除。</p><p v-else>确定删除“{{ deleteTarget.item.name }}”吗？如果已有历史审计，系统会拒绝并保留全部数据。</p></div>
+      <div class="delete-warning"><span><AppIcon name="trash" /></span><p v-if="deleteTarget.type === 'assistant'">确定删除“{{ deleteTarget.item.name }}”吗？</p><p v-else-if="deleteTarget.type === 'skill'">确定删除“{{ deleteTarget.item.name }}”吗？</p><p v-else>确定删除“{{ deleteTarget.item.name }}”吗？</p></div>
       <template #footer><button class="button button--secondary" type="button" :disabled="saving" @click="deleteTarget = null">取消</button><button class="button button--danger" type="button" :disabled="saving" @click="confirmDelete">确认删除</button></template>
     </BaseModal>
   </AppShell>

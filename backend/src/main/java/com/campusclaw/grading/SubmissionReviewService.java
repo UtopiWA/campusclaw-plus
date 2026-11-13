@@ -30,7 +30,7 @@ public class SubmissionReviewService {
                                     ReviewSubmissionRequest request, UserAccount teacher) {
         if (teacher.getRole() != Role.TEACHER) throw new AccessDeniedException("Teacher role required");
         var assignment = assignments.findByIdAndClassId(assignmentId, teacher.getClassId())
-                .filter(a -> a.isGradable()).orElseThrow(NotFoundException::new);
+                .filter(a -> a.isGradable() && !a.isPersonalPractice()).orElseThrow(NotFoundException::new);
         var submission = submissions.lockForReview(submissionId, assignmentId, teacher.getClassId())
                 .orElseThrow(NotFoundException::new);
         if (request.score() == null || request.score() < 0 || request.score() > assignment.getMaxScore()

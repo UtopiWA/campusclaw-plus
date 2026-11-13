@@ -1,4 +1,5 @@
 <script setup>
+import PagedList from '../components/PagedList.vue'
 import { feedbackRef } from '../services/feedback.js'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -304,10 +305,10 @@ onMounted(initialize)
         <div class="conversation-list-head"><strong>助手对话</strong><button class="icon-button conversation-drawer-close" type="button" aria-label="关闭会话列表" @click="drawerOpen = false"><AppIcon name="close" /></button></div>
         <button class="button button--primary conversation-new" type="button" :disabled="busy || !availableAssistants.length" @click="router.push('/conversations')">＋ 新对话</button>
         <nav aria-label="历史会话">
-          <div v-for="item in conversations" :key="item.id" class="conversation-list-item" :class="{ active: item.id === currentId }">
+          <PagedList :items="conversations" label="会话"  v-slot="{ pageItems }"><div v-for="item in pageItems" :key="item.id" class="conversation-list-item" :class="{ active: item.id === currentId }">
             <button class="conversation-list-select" type="button" @click="selectConversation(item.id)"><strong>{{ item.title }}</strong><span>{{ item.assistantName }}</span></button>
             <button class="conversation-list-delete" type="button" :disabled="busy && item.id === currentId" :aria-label="`删除会话 ${item.title}`" @click="requestConversationDelete(item)"><AppIcon name="trash" :size="14" /></button>
-          </div>
+          </div></PagedList>
           <p v-if="!conversations.length">暂无历史会话</p>
         </nav>
       </aside>
@@ -324,7 +325,7 @@ onMounted(initialize)
           <div v-if="loading" class="conversation-empty"><p>正在加载会话…</p></div>
           <section v-else-if="!current" class="conversation-empty">
             <span><AppIcon name="bot" :size="30" /></span><h1>开始一次教学对话</h1>
-            <p v-if="availableAssistants.length">选定智能体后，每轮回答都会先检索教师当前绑定的讲义，并应用匹配技能。</p>
+            <p v-if="availableAssistants.length">选择一个助手，开始新的对话。</p>
             <p v-else>当前班级没有可用的智能体，请联系教师先启用一个智能体。</p>
             <form v-if="availableAssistants.length" class="conversation-start" @submit.prevent="startConversation">
               <label><span>选择智能体</span><select v-model="selectedAssistantId"><option v-for="item in availableAssistants" :key="item.id" :value="String(item.id)">{{ item.name }}</option></select></label>
@@ -333,8 +334,8 @@ onMounted(initialize)
           </section>
 
           <template v-else>
-            <article v-for="message in current.messages" :key="message.id" class="chat-message" :class="`chat-message--${message.role}`">
-              <div v-if="message.role === 'user'" class="chat-user-wrap"><div class="chat-user-bubble">{{ message.content }}</div></div>
+            <PagedList :items="current.messages" label="对话消息" follow-end :reset-key="currentId" v-slot="{ pageItems }"><article v-for="message in pageItems" :key="message.id" class="chat-message" :class="`chat-message--${message.role}`">
+              <div v-if="message.role === 'user'" class="chat-user-wrap"><div class="chat-user-bubble assistant-markdown" v-html="renderAssistantMarkdown(message.content)"></div></div>
               <template v-else>
                 <div class="chat-assistant-avatar" aria-hidden="true"><AppIcon name="bot" /></div>
                 <div class="chat-assistant-content">
@@ -356,19 +357,18 @@ onMounted(initialize)
                   <ol v-if="referencedCitations(message).length" class="chat-citations">
                     <li v-for="citation in referencedCitations(message)" :id="`conversation-citation-${message.id}-${citation.number}`" :key="citation.number" class="chat-citation" tabindex="-1">
                       <div class="chat-citation-heading"><strong>[{{ citation.number }}] {{ citation.materialTitle }}</strong><RouterLink :to="`/materials?material=${citation.materialId}&chunk=${citation.chunkId}`">查看上下文</RouterLink></div>
-                      <p v-show="citationIsExpanded(message, citation)" :id="`conversation-citation-excerpt-${message.id}-${citation.number}`">{{ citation.excerpt }}</p>
+                      <div v-show="citationIsExpanded(message, citation)" :id="`conversation-citation-excerpt-${message.id}-${citation.number}`" class="assistant-markdown" v-html="renderAssistantMarkdown(citation.excerpt)"></div>
                       <button class="chat-citation-toggle" type="button" :aria-expanded="citationIsExpanded(message, citation)" :aria-controls="`conversation-citation-excerpt-${message.id}-${citation.number}`" @click="toggleCitation(message, citation)">{{ citationIsExpanded(message, citation) ? '收起片段' : '展开片段' }}</button>
                     </li>
                   </ol>
                 </div>
               </template>
-            </article>
+            </article></PagedList>
           </template>
         </main>
 
         <footer v-if="current" class="conversation-composer-wrap">
           <form class="chat-composer" @submit.prevent="send()"><div class="chat-input-row"><textarea v-model="question" rows="2" maxlength="500" placeholder="向教学助手提问…" aria-label="问题" :disabled="busy" @keydown.enter.exact.prevent="send()" /><button class="chat-send" type="submit" :disabled="busy || !question.trim()" aria-label="发送"><span aria-hidden="true">↑</span></button></div><div class="conversation-composer-meta"><span>{{ current.assistantName }}</span><span>{{ [...question].length }}/500</span></div></form>
-          <p class="chat-disclaimer">回答前会检索智能体绑定的讲义；回答将保存到当前会话，请结合引用核对。</p>
         </footer>
       </section>
     </div>

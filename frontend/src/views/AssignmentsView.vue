@@ -1,5 +1,9 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import PagedList from '../components/PagedList.vue'
+import { getQuestion, listQuestions, saveQuestion, submitQuestion, getQuestionResponse, deleteQuestion, setQuestionAvailability } from '../services/questions.js'
+import { renderAssistantMarkdown } from '../utils/assistantMarkdown.js'
 import AppShell from '../components/AppShell.vue'
 import AppIcon from '../components/AppIcon.vue'
 import BaseModal from '../components/BaseModal.vue'
@@ -11,11 +15,30 @@ import {
   listTeacherSubmissions, reviewSubmission, submitAssignment,
 } from '../services/assignments.js'
 
+const props = defineProps({ questionBank: Boolean })
+const route = useRoute()
+const router = useRouter()
+const basePath = computed(() => props.questionBank ? '/questions' : '/assignments')
+const detailId = computed(() => route.params.id ? Number(route.params.id) : null)
+const title = computed(() => props.questionBank ? '题库' : isTeacher.value ? '作业与批改' : '我的作业')
+const keyword = ref(String(route.query.q || ''))
+const tagFilter = ref(String(route.query.tag || ''))
+const stateFilter = ref(String(route.query.state || ''))
+const listPage = computed(() => Math.max(1, Number(route.query.page) || 1))
+const pageSize = computed(() => [10, 20, 50].includes(Number(route.query.size)) ? Number(route.query.size) : 10)
+const selectedTags = computed(() => [...new Map(assignments.value.flatMap((item) => item.tags || []).map((tag) => [tag.id, tag])).values()])
+const filtered = computed(() => assignments.value.filter((item) => (!keyword.value.trim() || `${item.title} ${item.prompt}`.toLocaleLowerCase().includes(keyword.value.trim().toLocaleLowerCase())) && (!tagFilter.value || item.tags?.some((tag) => String(tag.id) === tagFilter.value)) && (!stateFilter.value || (isTeacher.value && props.questionBank ? (item.enabled ? 'enabled' : 'disabled') : item.myLatest?.status || 'NOT_SUBMITTED') === stateFilter.value)))
 const isTeacher = computed(() => authState.user?.role === 'teacher')
+const redo = ref(false)
+const submissionKey = ref(null)
+const submissionDraft = ref(null)
+const deleteOpen = ref(false)
+const deleteBusy = ref(false)
+const referenceQuery = ref('')
 const assignments = ref([])
-const selectedId = ref(null)
-const selected = computed(() => assignments.value.find((item) => item.id === selectedId.value) || null)
+const selected = ref(null)
 const loading = ref(true)
+const loadFailed = ref(false)
 const submissions = ref([])
 const submissionsLoading = ref(false)
 const submitting = ref(false)
@@ -38,17 +61,18 @@ let failures = 0
 const requests = new Set()
 
 const terminal = (status) => ['SUCCEEDED', 'FAILED'].includes(status)
-const statusLabel = (status) => ({ PENDING: '待批改', RUNNING: '批改中', SUCCEEDED: '已批改', FAILED: '待教师处理' })[status] || '待提交'
+const statusLabel = (status) => ({ PENDING: '待批改', RUNNING: '批改中', SUCCEEDED: '已批改', FAILED: '待教师处理', NOT_SUBMITTED: props.questionBank ? '未作答' : '未提交' })[status] || '待提交'
 const errorMessage = (exception) => exception?.message || '操作失败，请稍后重试'
 const notifyError = (exception) => showFeedback(errorMessage(exception))
 const finalScore = computed(() => effectiveReview.value?.score ?? task.value?.result?.score)
+const resultTotal = computed(() => task.value?.result?.maxScore ?? selected.value?.maxScore)
 const finalComment = computed(() => effectiveReview.value?.comment ?? task.value?.result?.rationale)
-const rubricFiles = computed(() => materials.value.filter((item) => item.indexStatus === 'READY' && (item.hasFile || item.originalFilename)))
+const rubricFiles = computed(() => materials.value.filter((item) => item.indexStatus === 'READY' && (item.hasFile || item.originalFilename) && item.title.includes(referenceQuery.value.trim())))
 
 function listState(item) {
-  if (isTeacher.value) return '已发布'
-  if (Number.isFinite(item.myLatest?.score)) return `${item.myLatest.score} 分`
-  return statusLabel(item.myLatest?.status)
+  if (isTeacher.value) return props.questionBank ? item.enabled ? '已启用' : '已停用' : '已发布'
+  if (Number.isFinite(item.myLatest?.score)) return props.questionBank && item.myLatest.maxScore ? `${item.myLatest.score} / ${item.myLatest.maxScore} 分` : `${item.myLatest.score} 分`
+  return statusLabel(item.myLatest?.status || 'NOT_SUBMITTED')
 }
 function stopPolling() { clearTimeout(pollTimer); pollTimer = null }
 function cancelSelection() {
@@ -88,7 +112,7 @@ async function readTask() {
   const version = selectionVersion
   const request = controller()
   try {
-    const response = await getGradingTask(taskId, { signal: request.signal })
+    const response = await (props.questionBank ? getQuestionResponse(detailId.value, { signal: request.signal }) : getGradingTask(taskId, { signal: request.signal }))
     if (!current(version, request)) return
     mergeTask(response)
     failures = 0
@@ -100,7 +124,7 @@ async function readTask() {
     }
     if (terminal(response.status)) {
       stopPolling()
-      if (response.status === 'FAILED' && !response.teacherReview) showFeedback('AI 批改未能完成，请等待教师批阅')
+      if (response.status === 'FAILED' && !response.teacherReview) showFeedback(props.questionBank ? '批改未能完成，可以重新作答' : '批改未能完成，请等待教师批阅')
     } else schedulePoll()
   } catch {
     if (!current(version, request)) return
@@ -109,61 +133,107 @@ async function readTask() {
     else schedulePoll()
   } finally { requests.delete(request) }
 }
-async function selectAssignment(item) {
-  cancelSelection()
-  selectedId.value = item.id
-  submitContent.value = ''
-  task.value = null
-  submissions.value = []
-  if (isTeacher.value) await loadSubmissions()
-  else if (item.myLatest?.taskId) await readTask()
+function updateQuery(changes) {
+  // 路由更新是异步的；分页收敛时也带上当前筛选，避免覆盖尚未提交到路由的输入。
+  const query = { ...route.query, q: keyword.value, tag: tagFilter.value, state: stateFilter.value, ...changes }
+  for (const key of Object.keys(query)) if (query[key] === '' || query[key] == null || (key === 'page' && Number(query[key]) === 1)) delete query[key]
+  router.replace({ path: route.path, query })
 }
-async function loadAssignments(preferredId = selectedId.value) {
+watch([keyword, tagFilter, stateFilter], () => {
+  if (keyword.value === String(route.query.q || '') && tagFilter.value === String(route.query.tag || '') && stateFilter.value === String(route.query.state || '')) return
+  updateQuery({ page: null })
+})
+watch(() => route.query, (query) => { keyword.value = String(query.q || ''); tagFilter.value = String(query.tag || ''); stateFilter.value = String(query.state || '') })
+function openItem(item) { router.push({ path: `${basePath.value}/${item.id}`, query: route.query }) }
+async function loadAssignments() {
+  cancelSelection()
+  const version = selectionVersion
+  const request = controller()
   loading.value = true
+  loadFailed.value = false
+  selected.value = null
+  task.value = null
+  submitContent.value = ''
+  redo.value = false
+  submissionKey.value = null
+  submissions.value = []
   try {
-    const items = await listAssignments()
-    if (disposed) return
-    assignments.value = items
-    const item = items.find((entry) => entry.id === preferredId) || items[0]
-    if (item) await selectAssignment(item)
-  } catch (exception) { if (!disposed) notifyError(exception) }
-  finally { if (!disposed) loading.value = false }
+    if (detailId.value) {
+      const item = await (props.questionBank ? getQuestion(detailId.value, { signal: request.signal }) : getAssignment(detailId.value, { signal: request.signal }))
+      if (!current(version, request)) return
+      selected.value = item
+      if (isTeacher.value && !props.questionBank) await loadSubmissions()
+      else if (!isTeacher.value && item.myLatest?.taskId) {
+        if (props.questionBank) { task.value = item.myLatest; schedulePoll() }
+        else await readTask()
+      }
+    } else {
+      const items = await (props.questionBank ? listQuestions({ signal: request.signal }) : listAssignments())
+      if (current(version, request)) assignments.value = items
+    }
+  } catch (exception) { if (current(version, request)) { loadFailed.value = true; notifyError(exception) } }
+  finally { requests.delete(request); if (current(version, request)) loading.value = false }
 }
 async function openCreate() {
-  form.value = { title: '', prompt: '', maxScore: 100, rubricMaterialIds: [] }
+  referenceQuery.value = ''
+  form.value = { title: '', prompt: '', maxScore: 100, rubricMaterialIds: [], enabled: true }
   createOpen.value = true
   try { const items = await listMaterials(); if (!disposed) materials.value = items }
   catch (exception) { if (!disposed) notifyError(exception) }
 }
+async function openEdit() {
+  referenceQuery.value = ''
+  form.value = { id: selected.value.id, title: selected.value.title, prompt: selected.value.prompt, maxScore: selected.value.maxScore, rubricMaterialIds: (selected.value.rubricSources || []).map((source) => source.id), enabled: selected.value.enabled }
+  createOpen.value = true
+  try { const items = await listMaterials(); if (!disposed) materials.value = items }
+  catch (exception) { if (!disposed) notifyError(exception) }
+}
+async function removeQuestion() {
+  if (deleteBusy.value) return
+  deleteBusy.value = true
+  try { await deleteQuestion(selected.value.id); if (!disposed) { deleteOpen.value = false; showFeedback('题目已删除', 'success'); await router.push({ path: basePath.value, query: route.query }) } }
+  catch (exception) { if (!disposed) notifyError(exception) }
+  finally { deleteBusy.value = false }
+}
+async function toggleQuestion() {
+  try { await setQuestionAvailability(selected.value.id, !selected.value.enabled); if (!disposed) { showFeedback(selected.value.enabled ? '题目已停用' : '题目已启用', 'success'); await loadAssignments() } }
+  catch (exception) { if (!disposed) notifyError(exception) }
+}
 async function saveAssignment() {
   if (createBusy.value) return
-  const payload = { ...form.value, title: form.value.title.trim(), prompt: form.value.prompt.trim(), maxScore: Number(form.value.maxScore) }
+  const payload = { title: form.value.title.trim(), prompt: form.value.prompt.trim(), maxScore: Number(form.value.maxScore), rubricMaterialIds: [...form.value.rubricMaterialIds], ...(props.questionBank ? { enabled: form.value.enabled } : {}) }
   if (!payload.title || !payload.prompt) return showFeedback('请填写作业标题和详细题目')
   if (!Number.isInteger(payload.maxScore) || payload.maxScore < 1 || payload.maxScore > 100) return showFeedback('总分应为 1～100 的整数')
   if (!payload.rubricMaterialIds.length || payload.rubricMaterialIds.length > 5) return showFeedback('请选择 1～5 个参考答案文件')
   createBusy.value = true
   try {
-    const item = await createAssignment(payload)
+    const item = await (props.questionBank ? saveQuestion(form.value.id, payload) : createAssignment(payload))
     if (disposed) return
     createOpen.value = false
-    showFeedback('作业已创建', 'success')
-    await loadAssignments(item.id)
+    showFeedback(props.questionBank ? '题目已保存' : '作业已创建', 'success')
+    if (detailId.value === item.id) await loadAssignments()
+    else await router.push({ path: `${basePath.value}/${item.id}`, query: route.query })
   } catch (exception) { if (!disposed) notifyError(exception) }
   finally { createBusy.value = false }
 }
 async function submit() {
-  if (submitting.value || submitted.value || !selected.value) return
+  if (submitting.value || (submitted.value && !redo.value) || !selected.value) return
   const content = submitContent.value.trim()
   if (!content || [...content].length > 10000) return showFeedback('请输入 1～10000 字的作答')
+  if (submissionDraft.value !== content) { submissionKey.value = crypto.randomUUID(); submissionDraft.value = content }
   const assignmentId = selected.value.id
   const version = selectionVersion
   submitting.value = true
   try {
-    const accepted = await submitAssignment(assignmentId, content)
+    const accepted = await (props.questionBank ? submitQuestion(assignmentId, content, submissionKey.value ||= crypto.randomUUID(), selected.value.contentVersion) : submitAssignment(assignmentId, content, submissionKey.value ||= crypto.randomUUID()))
     if (disposed || version !== selectionVersion) return
     selected.value.myLatest = { ...accepted }
+    if (props.questionBank) { selected.value.questionChanged = false; selected.value.submittedPrompt = selected.value.prompt }
     task.value = { ...accepted, submissionContent: content }
     submitContent.value = ''
+    redo.value = false
+    submissionKey.value = null
+    submissionDraft.value = null
     showFeedback('作答已提交', 'success')
     schedulePoll()
   } catch (exception) { if (!disposed && version === selectionVersion) notifyError(exception) }
@@ -195,7 +265,7 @@ async function refresh() { if (isTeacher.value) await loadSubmissions(); else aw
 // 批改任务终态后停止轮询，仅低频读取作业摘要，接收教师之后给出的终评。
 async function refreshReview() {
   if (disposed) return
-  if (!isTeacher.value && selected.value?.myLatest && terminal(task.value?.status) && !effectiveReview.value && document.visibilityState !== 'hidden') {
+  if (!props.questionBank && !isTeacher.value && selected.value?.myLatest && terminal(task.value?.status) && !effectiveReview.value && document.visibilityState !== 'hidden') {
     const version = selectionVersion
     const request = controller()
     try {
@@ -209,81 +279,86 @@ async function refreshReview() {
   }
   if (!disposed) reviewTimer = setTimeout(refreshReview, 15000)
 }
+watch(detailId, loadAssignments)
 onMounted(() => { loadAssignments(); reviewTimer = setTimeout(refreshReview, 15000) })
 onBeforeUnmount(() => { disposed = true; cancelSelection(); clearTimeout(reviewTimer) })
 </script>
 
 <template>
-  <AppShell current="assignments">
+  <AppShell :current="questionBank ? 'questions' : 'assignments'">
     <div class="page-container assignment-page">
-      <header class="page-heading">
-        <div><p class="breadcrumb">教学空间 <span>/</span> 作业批改</p><h1>{{ isTeacher ? '作业批改' : '我的作业' }}</h1><p>{{ isTeacher ? '发布作业，查看学生作答并完成批阅。' : '完成作业，查看老师的批阅与反馈。' }}</p></div>
-        <button v-if="isTeacher" type="button" class="button button--primary" @click="openCreate"><span aria-hidden="true">＋</span>新建作业</button>
-      </header>
-      <div v-if="loading" class="assignment-empty content-card">正在加载作业…</div>
-      <div v-else-if="!assignments.length" class="assignment-empty content-card"><AppIcon name="book" /><h2>暂无作业</h2><p>{{ isTeacher ? '创建第一份作业，开始收集学生的学习反馈。' : '老师发布作业后，会显示在这里。' }}</p></div>
-      <div v-else class="assignment-layout">
-        <aside class="content-card assignment-list" aria-label="作业列表">
-          <div class="assignment-list-heading"><h2>作业列表</h2><span>{{ assignments.length }} 份</span></div>
-          <button v-for="item in assignments" :key="item.id" type="button" class="assignment-item" :class="{ active: selectedId === item.id }" :aria-pressed="selectedId === item.id" @click="selectAssignment(item)">
-            <span class="assignment-item-title">{{ item.title }}</span><span class="assignment-item-status">{{ listState(item) }}</span>
-          </button>
-        </aside>
+      <header class="page-heading"><div><p class="breadcrumb"><RouterLink v-if="detailId" :to="{ path: basePath, query: route.query }">{{ title }}</RouterLink><span v-else>学习空间</span><span>/</span>{{ detailId ? '详情' : title }}</p><h1>{{ title }}</h1><p>{{ questionBank ? isTeacher ? '管理练习题目与参考答案。' : '选择题目练习，查看批改结果。' : isTeacher ? '发布作业，查看学生作答并完成批阅。' : '完成作业，查看老师的批阅与反馈。' }}</p></div><div class="learning-actions"><button v-if="!isTeacher && questionBank && detailId" class="button button--soft" :disabled="loading || submitting" @click="loadAssignments">刷新题目</button><button v-if="isTeacher && questionBank && detailId && selected" class="button button--soft" @click="openEdit">编辑题目</button><button v-if="isTeacher && questionBank && detailId && selected" class="button button--soft" @click="toggleQuestion">{{ selected.enabled ? '停用' : '启用' }}</button><button v-if="isTeacher && questionBank && detailId && selected" class="button button--soft" @click="deleteOpen = true">删除题目</button><button v-if="isTeacher && !detailId" class="button button--primary" @click="openCreate">{{ questionBank ? '新建题目' : '新建作业' }}</button></div></header>
+        <p v-if="loading" class="assignment-empty content-card">正在加载…</p>
+        <section v-else-if="loadFailed" class="content-card assignment-empty"><p>内容暂时无法读取，请重试。</p><button class="button button--soft" @click="loadAssignments">重新加载</button></section>
+        <template v-else-if="!detailId">
+          <section class="content-card assessment-list-panel"><div class="assessment-filters"><label>查找<input v-model="keyword" type="search" placeholder="搜索标题或题目" /></label><label>知识标签<select v-model="tagFilter"><option value="">全部标签</option><option v-for="tag in selectedTags" :key="tag.id" :value="String(tag.id)">{{ tag.name }}</option></select></label><label v-if="!isTeacher || questionBank">状态<select v-model="stateFilter"><option value="">全部状态</option><template v-if="isTeacher"><option value="enabled">已启用</option><option value="disabled">已停用</option></template><template v-else><option value="NOT_SUBMITTED">{{ questionBank ? '未作答' : '未提交' }}</option><option value="PENDING">待批改</option><option value="RUNNING">批改中</option><option value="SUCCEEDED">已批改</option><option value="FAILED">批改未完成</option></template></select></label><button class="button button--soft" :disabled="loading" @click="loadAssignments">刷新</button></div>
+          <p v-if="!filtered.length" class="assignment-empty">{{ assignments.length ? '没有匹配的内容，请调整查找条件。' : questionBank ? '暂无题目。' : '暂无作业。' }}</p>
+          <PagedList :items="filtered" always-show :page="listPage" :page-size="pageSize" :label="questionBank ? '题库' : '作业'" @update:page="(page) => updateQuery({ page })" @update:page-size="(size) => updateQuery({ size, page: null })" v-slot="{ pageItems }"><div class="assessment-list"><button v-for="item in pageItems" :key="item.id" class="assessment-row" @click="openItem(item)">
+            <h2>{{ item.title }}</h2>
+            <div class="assessment-row-tags"><span v-for="tag in (item.tags || []).slice(0, 3)" :key="tag.id">{{ tag.name }}</span><span v-if="item.tags?.length > 3" :title="item.tags.slice(3).map((tag) => tag.name).join('、')">+{{ item.tags.length - 3 }}</span></div>
+            <div class="assessment-row-result"><span class="learning-badge">{{ listState(item) }}</span><span>满分 {{ item.maxScore }} 分</span></div><span class="assessment-row-open" aria-hidden="true">→</span>
+          </button></div></PagedList></section>
+        </template>
+        <template v-else>
+          <div class="assessment-back"><RouterLink class="button button--soft" :to="{ path: basePath, query: route.query }">← 返回{{ questionBank ? '题库' : '作业列表' }}</RouterLink></div>
         <main v-if="selected" class="assignment-main">
           <article class="content-card assignment-detail">
             <div class="assignment-detail-heading"><h2>{{ selected.title }}</h2><span class="assignment-total">满分 {{ selected.maxScore }} 分</span></div>
-            <p class="assignment-prompt">{{ selected.prompt }}</p>
+            <div class="assignment-prompt assistant-markdown" v-html="renderAssistantMarkdown(selected.prompt)"></div><div v-if="selected.tags?.length" class="learning-actions"><span v-for="tag in selected.tags" :key="tag.id" class="learning-badge">{{ tag.name }}</span></div>
             <div v-if="isTeacher && selected.rubricSources?.length" class="rubric-sources"><span>参考答案</span><span v-for="source in selected.rubricSources" :key="source.id" class="rubric-file"><AppIcon name="book" />{{ source.title }}</span></div>
           </article>
-          <section v-if="isTeacher" class="content-card submissions-panel">
+          <section v-if="isTeacher && !questionBank" class="content-card submissions-panel">
             <div class="section-heading"><h2>学生作答</h2><button class="button button--soft" type="button" :disabled="submissionsLoading" @click="loadSubmissions">刷新</button></div>
             <p v-if="submissionsLoading" class="section-empty">正在加载作答…</p>
             <p v-else-if="!submissions.length" class="section-empty">还没有学生提交作答。</p>
-            <div v-else class="submission-table-wrap"><table class="submissions-table">
-              <thead><tr><th>学生</th><th>作答</th><th>状态</th><th>得分</th><th><span class="sr-only">操作</span></th></tr></thead>
-              <tbody><tr v-for="item in submissions" :key="item.submissionId">
-                <td class="student-name">{{ item.studentUsername }}</td><td><p class="submission-excerpt">{{ item.content }}</p></td>
+            <PagedList v-else :items="submissions" :reset-key="detailId" label="学生作答" v-slot="{ pageItems }"><div class="submission-table-wrap"><table class="submissions-table">
+              <thead><tr><th>学生</th><th>作答</th><th>状态</th><th>得分</th><th>作答时间</th><th><span class="sr-only">操作</span></th></tr></thead>
+              <tbody><tr v-for="item in pageItems" :key="item.studentId">
+                <td class="student-name">{{ item.studentUsername }}</td><td><div class="submission-excerpt assistant-markdown" v-html="renderAssistantMarkdown(item.content || '—')"></div></td>
                 <td><span class="grading-status" :class="{ 'grading-status--done': item.teacherReview || item.status === 'SUCCEEDED' }">{{ item.teacherReview ? '已终评' : statusLabel(item.status) }}</span></td>
                 <td class="submission-score">{{ item.score ?? '—' }}<span v-if="item.score !== null && item.score !== undefined"> / {{ selected.maxScore }}</span></td>
-                <td><button type="button" class="button button--soft" :aria-label="`给 ${item.studentUsername} 改分`" @click="openReview(item)">改分</button></td>
+                <td>{{ item.createdAt ? new Date(item.createdAt).toLocaleString('zh-CN') : '—' }}</td><td><button v-if="item.submissionId" type="button" class="button button--soft" :aria-label="`给 ${item.studentUsername} 改分`" @click="openReview(item)">改分</button></td>
               </tr></tbody>
-            </table></div>
+            </table></div></PagedList>
           </section>
-          <section v-else-if="!submitted" class="content-card submit-panel">
+          <section v-else-if="!isTeacher && (!submitted || redo)" class="content-card submit-panel">
             <div class="section-heading"><h2>填写作答</h2></div>
-            <div class="answer-editor"><label class="sr-only" for="student-answer">作答内容</label><textarea id="student-answer" v-model="submitContent" rows="9" maxlength="10000" placeholder="在这里写下你的答案…"></textarea><div class="answer-actions"><span>每份作业仅可提交一次</span><button class="button button--primary" type="button" :disabled="submitting || !submitContent.trim()" @click="submit">{{ submitting ? '提交中…' : '提交' }}</button></div></div>
+            <div class="answer-editor"><label class="sr-only" for="student-answer">作答内容</label><textarea id="student-answer" v-model="submitContent" rows="9" maxlength="10000" placeholder="在这里写下你的答案…"></textarea><div class="answer-actions"><button v-if="redo" class="button button--soft" @click="redo = false; submitContent = ''">取消重答</button><span>{{ questionBank ? '本次提交将替换上一次作答和批改结果' : '每份作业仅可提交一次' }}</span><button class="button button--primary" type="button" :disabled="submitting || !submitContent.trim()" @click="submit">{{ submitting ? '提交中…' : '提交' }}</button></div></div>
           </section>
-          <section v-else class="content-card grading-result-panel">
-            <div class="section-heading"><h2>批改结果</h2><button class="button button--soft" type="button" @click="refresh">刷新结果</button></div>
-            <div class="result-body">
-              <section class="student-answer"><h3>我的作答</h3><p>{{ task?.submissionContent || '正在读取作答…' }}</p></section>
+          <section v-else-if="!isTeacher" class="content-card grading-result-panel">
+            <div class="section-heading"><h2>批改结果</h2><div class="learning-actions"><button v-if="questionBank && terminal(task?.status)" class="button button--primary" @click="redo = true; submitContent = task?.submissionContent || ''">重新作答</button><button class="button button--soft" type="button" @click="refresh">刷新结果</button></div></div>
+            <div class="result-body"><p v-if="questionBank && selected.questionChanged" class="learning-note">题目已更新。以下为上次题目与作答，重新作答将按当前题目批改。</p><details v-if="questionBank && selected.questionChanged"><summary>查看上次题目</summary><div class="assistant-markdown" v-html="renderAssistantMarkdown(selected.submittedPrompt)"></div></details>
+              <section class="student-answer"><h3>我的作答</h3><div class="answer-body assistant-markdown" v-html="renderAssistantMarkdown(task?.submissionContent || '正在读取作答…')"></div></section>
               <section v-if="Number.isFinite(finalScore)" class="grade-feedback">
-                <div class="grade-overview"><div><span class="grade-source">{{ effectiveReview ? '教师终评' : 'AI 批改' }}</span><p class="grade-score">{{ finalScore }}<span> / {{ selected.maxScore }} 分</span></p></div><span class="grading-status grading-status--done">{{ effectiveReview ? '已终评' : '已批改' }}</span></div>
-                <h3>评语</h3><p class="grade-comment">{{ finalComment }}</p>
+                <div class="grade-overview"><div><span class="grade-source">{{ effectiveReview ? '教师终评' : task?.result?.method === 'RULE' ? '系统批改' : 'AI 批改' }}</span><p class="grade-score">{{ finalScore }}<span> / {{ resultTotal }} 分</span></p></div><span class="grading-status grading-status--done">{{ effectiveReview ? '已终评' : '已批改' }}</span></div>
+                <h3>评语</h3><div class="grade-comment assistant-markdown" v-html="renderAssistantMarkdown(finalComment || '')"></div>
               </section>
-              <div v-else class="grading-waiting"><span class="grading-waiting-dot"></span><p>{{ task?.status === 'FAILED' ? '等待教师批阅' : '已提交，正在批改中' }}</p></div>
+              <div v-else class="grading-waiting"><span class="grading-waiting-dot"></span><p>{{ task?.status === 'FAILED' ? questionBank ? '批改未完成，可以重新作答' : '等待教师批阅' : '已提交，正在批改中' }}</p></div>
             </div>
           </section>
         </main>
-      </div>
+          <section v-else class="content-card assignment-empty"><p>内容暂时无法读取。</p><button class="button button--soft" @click="loadAssignments">重新加载</button></section>
+        </template>
     </div>
-    <BaseModal v-if="createOpen" title="新建作业" wide @close="!createBusy && (createOpen = false)">
+    <BaseModal v-if="createOpen" :title="questionBank ? form.id ? '编辑题目' : '新建题目' : '新建作业'" wide @close="!createBusy && (createOpen = false)">
       <form id="assignment-create" class="config-form assignment-form" novalidate @submit.prevent="saveAssignment">
-        <label class="field"><span>作业标题</span><input v-model="form.title" maxlength="120" placeholder="例如：勾股定理课堂练习" /></label>
+        <label class="field"><span>{{ questionBank ? '题目标题' : '作业标题' }}</span><input v-model="form.title" maxlength="120" placeholder="例如：分数运算练习" /></label>
         <label class="field"><span>详细题目</span><textarea v-model="form.prompt" rows="5" maxlength="4000" placeholder="写清题目、作答要求及必要条件"></textarea></label>
         <label class="field assignment-points-field"><span>总分</span><input v-model="form.maxScore" type="number" min="1" max="100" step="1" /></label>
-        <fieldset class="rubric-picker"><legend>参考答案文件</legend><p>选择本班已解析的参考答案文件，最多 5 个；AI 将结合题目综合评分。</p>
-          <div v-if="rubricFiles.length" class="rubric-options"><label v-for="material in rubricFiles" :key="material.id" class="rubric-option" :class="{ selected: form.rubricMaterialIds.includes(material.id) }"><input v-model="form.rubricMaterialIds" type="checkbox" :value="material.id" /><AppIcon name="book" /><span>{{ material.title }}</span></label></div>
-          <p v-else class="rubric-picker-empty">暂无可用文件，请先到<a href="/materials">讲义与检索</a>上传参考答案。</p>
+        <fieldset class="rubric-picker"><legend>参考答案文件（最多5个）</legend>
+          <label class="field reference-search"><span>查找讲义</span><input v-model="referenceQuery" type="search" placeholder="输入讲义名称" /></label>
+          <div v-if="rubricFiles.length" class="rubric-options"><PagedList :items="rubricFiles" :reset-key="referenceQuery" label="参考答案文件" v-slot="{ pageItems }"><label v-for="material in pageItems" :key="material.id" class="rubric-option" :class="{ selected: form.rubricMaterialIds.includes(material.id) }"><input v-model="form.rubricMaterialIds" type="checkbox" :value="material.id" /><AppIcon name="book" /><span>{{ material.title }}</span></label></PagedList></div>
+          <p v-else class="rubric-picker-empty">{{ referenceQuery ? '没有匹配的讲义，请更换关键词。' : '暂无可用文件，请先上传参考答案。' }}<a v-if="!referenceQuery" href="/materials">讲义与检索</a></p>
         </fieldset>
+        <label v-if="questionBank" class="switch-field"><input v-model="form.enabled" type="checkbox" /><span>启用题目</span></label>
       </form>
-      <template #footer><button class="button button--secondary" type="button" :disabled="createBusy" @click="createOpen = false">取消</button><button class="button button--primary" type="submit" form="assignment-create" :disabled="createBusy">{{ createBusy ? '正在创建…' : '创建作业' }}</button></template>
+      <template #footer><button class="button button--secondary" type="button" :disabled="createBusy" @click="createOpen = false">取消</button><button class="button button--primary" type="submit" form="assignment-create" :disabled="createBusy">{{ createBusy ? '保存中…' : questionBank ? '保存题目' : '创建作业' }}</button></template>
     </BaseModal>
     <BaseModal v-if="reviewTarget" title="批阅与终评" wide @close="!reviewBusy && (reviewTarget = null)">
       <div class="review-student"><strong>{{ reviewTarget.studentUsername }}</strong><span>{{ selected.title }}</span></div>
-      <section class="review-answer"><h3>学生作答</h3><p>{{ reviewTarget.content }}</p></section>
-      <section class="review-ai"><div class="review-ai-heading"><h3>AI 批改</h3><strong>{{ reviewTarget.aiResult ? `${reviewTarget.aiResult.score} / ${selected.maxScore} 分` : '暂无结果' }}</strong></div>
-        <template v-if="reviewTarget.aiResult"><p>{{ reviewTarget.aiResult.rationale }}</p><details v-if="reviewTarget.aiResult.criteria?.length"><summary>查看原评分明细</summary><ul><li v-for="item in reviewTarget.aiResult.criteria" :key="item.key"><strong>{{ item.description }} · {{ item.awardedPoints }} / {{ item.points }} 分</strong><p>{{ item.explanation }}</p><p>作答依据：{{ item.evidence }}</p></li></ul></details></template>
+      <section class="review-answer"><h3>学生作答</h3><div class="answer-body assistant-markdown" v-html="renderAssistantMarkdown(reviewTarget.content)"></div></section>
+      <section class="review-ai"><div class="review-ai-heading"><h3>{{ reviewTarget.aiResult?.method === 'RULE' ? '系统批改' : 'AI 批改' }}</h3><strong>{{ reviewTarget.aiResult ? `${reviewTarget.aiResult.score} / ${selected.maxScore} 分` : '暂无结果' }}</strong></div>
+        <template v-if="reviewTarget.aiResult"><div class="assistant-markdown" v-html="renderAssistantMarkdown(reviewTarget.aiResult.rationale)"></div><details v-if="reviewTarget.aiResult.criteria?.length"><summary>查看原评分明细</summary><ul><li v-for="item in reviewTarget.aiResult.criteria" :key="item.key"><strong>{{ item.awardedPoints }} / {{ item.points }} 分</strong><div class="assistant-markdown" v-html="renderAssistantMarkdown(item.description)"></div><div class="assistant-markdown" v-html="renderAssistantMarkdown(item.explanation)"></div><div class="assistant-markdown" v-html="renderAssistantMarkdown(item.evidence)"></div></li></ul></details></template>
         <p v-else>可以直接填写教师终评。</p>
       </section>
       <form id="submission-review" class="config-form assignment-form review-form" novalidate @submit.prevent="saveReview">
@@ -292,9 +367,9 @@ onBeforeUnmount(() => { disposed = true; cancelSelection(); clearTimeout(reviewT
       </form>
       <template #footer><button class="button button--secondary" type="button" :disabled="reviewBusy" @click="reviewTarget = null">取消</button><button class="button button--primary" type="submit" form="submission-review" :disabled="reviewBusy">{{ reviewBusy ? '保存中…' : '保存终评' }}</button></template>
     </BaseModal>
+    <BaseModal v-if="deleteOpen" title="删除题目" @close="!deleteBusy && (deleteOpen = false)"><p>删除“{{ selected.title }}”？题目将从题库中移除，已有学习成绩保留。</p><template #footer><button class="button button--soft" :disabled="deleteBusy" @click="deleteOpen = false">取消</button><button class="button button--primary" :disabled="deleteBusy" @click="removeQuestion">删除</button></template></BaseModal>
   </AppShell>
 </template>
-
 <style scoped>
 .assignment-layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); align-items: start; gap: 24px; }
 .assignment-main { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 24px; }
@@ -339,24 +414,27 @@ onBeforeUnmount(() => { disposed = true; cancelSelection(); clearTimeout(reviewT
 .answer-actions > span { color: var(--ink-500); font-size: 14px; }
 .result-body { padding: 24px; }
 .student-answer h3, .grade-feedback h3, .review-answer h3, .review-ai h3 { font-size: 15px; margin: 0 0 12px; }
-.student-answer > p, .review-answer > p { padding: 16px; margin: 0; background: var(--canvas); border-radius: 10px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 1.8; }
+.answer-body { padding: 16px; margin: 0; background: var(--canvas); border-radius: 10px; overflow-wrap: anywhere; font-size: 15px; line-height: 1.8; }
 .grade-feedback { margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--line); }
 .grade-overview { display: flex; align-items: start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 .grade-source { font-size: 14px; color: var(--ink-500); }
 .grade-score { color: var(--brand-700); font-size: 36px; font-weight: 700; margin: 8px 0 0; line-height: 1.2; }
 .grade-score > span { color: var(--ink-500); font-size: 15px; font-weight: 400; }
-.grade-comment { margin: 0; font-size: 15px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.9; }
+.grade-comment { margin: 0; font-size: 15px; overflow-wrap: anywhere; line-height: 1.9; }
 .grading-waiting { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 24px; padding: 24px 0; color: var(--ink-500); }
 .grading-waiting-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--brand-700); }
 .assignment-form { display: grid; gap: 20px; }
-.assignment-form .field { margin: 0; gap: 8px; font-size: 14px; font-weight: 600; }
+.assignment-form .field { display: grid; min-width: 0; margin: 0; gap: 8px; font-size: 14px; font-weight: 600; }
+.assignment-form .reference-search { margin: 8px 0 16px; }
+.assignment-form input[type="search"] { width: 100%; min-height: 42px; padding: 10px 12px; color: var(--ink-900); background: #fff; border: 1px solid var(--line); border-radius: 8px; outline: 0; }
 .assignment-form input[type="number"] { width: 100%; padding: 10px 12px; color: #32363c; background: #fff; border: 1px solid #d9dce1; border-radius: 8px; outline: 0; }
 .assignment-form textarea { resize: vertical; line-height: 1.7; }
 .assignment-points-field { max-width: 180px; }
 .rubric-picker { margin: 0; padding: 0; border: 0; min-width: 0; }
 .rubric-picker legend { font-size: 14px; font-weight: 600; }
 .rubric-picker > p { margin: 8px 0 14px; font-size: 14px; color: var(--ink-500); }
-.rubric-options { display: grid; gap: 10px; max-height: 230px; overflow-y: auto; }
+.rubric-options { display: grid; gap: 10px; max-height: 320px; overflow-y: auto; }
+.rubric-options > .paged-list { display: grid; gap: 10px; }
 .rubric-option { display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
 .rubric-option.selected { border-color: #d9aaac; background: var(--brand-50); }
 .rubric-option input { accent-color: var(--brand-700); }
@@ -383,4 +461,27 @@ onBeforeUnmount(() => { disposed = true; cancelSelection(); clearTimeout(reviewT
 @media (max-width: 1000px) { .assignment-layout { grid-template-columns: 220px minmax(0, 1fr); gap: 18px; } .assignment-main { gap: 18px; } }
 @media (max-width: 760px) { .assignment-layout { grid-template-columns: 1fr; } .assignment-list { max-height: 260px; overflow-y: auto; } .assignment-item { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; } .assignment-item-status { flex-shrink: 0; } .assignment-list-heading { padding-bottom: 12px; } .assignment-detail, .result-body, .answer-editor { padding: 20px; } .submissions-table td, .submissions-table th { padding: 14px 12px; } }
 @media (max-width: 470px) { .assignment-detail-heading { flex-direction: column; gap: 12px; } .section-heading { padding: 18px; } .answer-actions { align-items: end; } .answer-actions > span { max-width: 150px; line-height: 1.6; } .review-student { align-items: start; flex-direction: column; gap: 6px; } }
+.assessment-list-panel { padding: 24px; }
+.assessment-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 16px; margin-bottom: 24px; }
+.assessment-filters label { display: grid; gap: 8px; flex: 1; min-width: 160px; font-size: 14px; }
+.assessment-filters input, .assessment-filters select { min-height: 42px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fff; font: inherit; width: 100%; }
+.assessment-list { border-top: 1px solid var(--line); }
+.assessment-row { width: 100%; display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 110px 24px; align-items: center; gap: 20px; min-height: 88px; text-align: left; padding: 18px 12px; border: 0; border-bottom: 1px solid var(--line); background: transparent; cursor: pointer; color: var(--ink-900); font: inherit; }
+.assessment-row:hover { background: var(--brand-50); }
+.assessment-row:focus-visible { outline: 2px solid var(--brand-700); outline-offset: -2px; }
+.assessment-row h2 { min-width: 0; font-size: 17px; font-weight: 600; margin: 0; overflow-wrap: anywhere; line-height: 1.6; }
+.assessment-row-tags { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.assessment-row-tags > span { max-width: 100%; padding: 4px 8px; border-radius: 6px; color: var(--ink-500); background: var(--canvas); font-size: 14px; overflow-wrap: anywhere; }
+.assessment-row-result { display: grid; justify-items: end; gap: 8px; color: var(--ink-500); font-size: 14px; }
+.assessment-row-result .learning-badge { white-space: nowrap; }
+.assessment-row-open { font-size: 20px; color: var(--ink-500); }
+@media (max-width: 760px) {
+  .assessment-row { grid-template-columns: minmax(0, 1fr) 110px 20px; gap: 10px; }
+  .assessment-row-tags { grid-column: 1 / -1; grid-row: 2; }
+  .assessment-row-result { grid-column: 2; grid-row: 1; }
+  .assessment-row-open { grid-column: 3; grid-row: 1; }
+}
+.assessment-back { margin-bottom: 20px; }
+.breadcrumb a { color: inherit; }
+@media (max-width: 470px) { .assessment-list-panel { padding: 16px; } .assessment-filters label { min-width: 100%; } }
 </style>

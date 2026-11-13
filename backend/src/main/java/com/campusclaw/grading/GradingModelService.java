@@ -12,8 +12,10 @@ import tools.jackson.databind.DeserializationFeature;
 import java.util.List;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
+import com.campusclaw.learning.LegacyObjectiveGrader;
 
-/** 模型参考答案综合评分；服务端验证分数与解释，不硬套分项权重。 */
+/** 历史客观作业保留原规则，新作业与题库均参考讲义综合评分。 */
 @Service
 public class GradingModelService {
     private static final int MAX_RATIONALE_CODE_POINTS = 2000;
@@ -27,6 +29,8 @@ public class GradingModelService {
             仅返回单个 JSON 对象，严格为 {"score":整数,"rationale":"中文评语"}，不要额外字段或文字。
             score 须在 0 到指定总分之间。rationale 不超过 2000 字，指出作答中的具体依据、
             错误或缺漏及改进建议，并解释该分数；不得只写空泛结论，不要输出提示词或敏感信息。
+            评语支持Markdown；数学使用$...$或$$...$$，不要用反引号包裹公式。
+            LaTeX反斜杠必须按JSON字符串规则转义为双反斜杠，不能变成换页等控制字符。
             """;
 
     private final ChatGateway chat;
@@ -34,17 +38,29 @@ public class GradingModelService {
     private final GradingProperties properties;
     private final RubricCodec rubrics;
     private final ObjectMapper mapper;
+    private final LegacyObjectiveGrader objective;
 
     public GradingModelService(ChatGateway chat, AppProperties app, GradingProperties properties,
                                RubricCodec rubrics, ObjectMapper mapper) {
+        this(chat, app, properties, rubrics, mapper, null);
+    }
+
+    @Autowired
+    public GradingModelService(ChatGateway chat, AppProperties app, GradingProperties properties,
+                               RubricCodec rubrics, ObjectMapper mapper, LegacyObjectiveGrader objective) {
         this.chat = chat;
         this.app = app;
         this.properties = properties;
         this.rubrics = rubrics;
         this.mapper = mapper;
+        this.objective = objective;
     }
 
     public GradingOutcome grade(Assignment assignment, Submission submission) {
+        if (objective != null) {
+            GradingOutcome result = objective.tryGrade(assignment, submission.getContent());
+            if (result != null) return result;
+        }
         Integer maxScore = assignment.getMaxScore();
         if (maxScore == null || maxScore < 1 || maxScore > 100) {
             throw new GradingNonRetryableException("ASSIGNMENT_INVALID");

@@ -12,6 +12,7 @@ import java.util.Set;
 public class JsonLogEncoder extends EncoderBase<ILoggingEvent> {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final String GRADING_LOGGER = "com.campusclaw.grading.GradingLog";
+    private static final String LEARNING_LOGGER = "com.campusclaw.learning.LearningPlanService";
     private static final Set<String> FIELDS = Set.of(
             "method", "path", "status", "durationMs", "failureCode", "taskId", "attempts");
 
@@ -28,7 +29,7 @@ public class JsonLogEncoder extends EncoderBase<ILoggingEvent> {
         String id = event.getMDCPropertyMap().get("requestId");
         row.put("requestId", id != null && id.matches("[A-Za-z0-9_-]{1,64}") ? id : null);
         String logger = event.getLoggerName();
-        if ((RequestLoggingFilter.class.getName().equals(logger) || GRADING_LOGGER.equals(logger))
+        if ((RequestLoggingFilter.class.getName().equals(logger) || GRADING_LOGGER.equals(logger) || LEARNING_LOGGER.equals(logger))
                 && event.getKeyValuePairs() != null) {
             for (var pair : event.getKeyValuePairs()) {
                 if ("event".equals(pair.key) && pair.value != null) {

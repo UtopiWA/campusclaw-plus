@@ -24,6 +24,18 @@ import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 class GradingModelServiceTest {
+    @Test
+    void preservesJsonEscapedLatexInFeedback() {
+        ChatGateway chat = mock(ChatGateway.class);
+        when(chat.complete(anyList())).thenAnswer(invocation -> {
+            List<ChatGateway.ChatMessage> messages = invocation.getArgument(0);
+            assertTrue(messages.get(0).content().contains("双反斜杠"));
+            assertTrue(messages.get(0).content().contains("不要用反引号包裹公式"));
+            return "{\"score\":87,\"rationale\":\"通分正确：$\\\\frac{1}{2}$。\"}";
+        });
+        assertEquals("通分正确：$\\frac{1}{2}$。", service(chat).grade(assignment(), submission()).rationale());
+    }
+
     @ParameterizedTest
     @ValueSource(ints = {0, 87, 100})
     void savesModelScoreWithoutFixedCriterionWeights(int score) {

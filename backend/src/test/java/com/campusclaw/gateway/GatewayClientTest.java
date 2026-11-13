@@ -156,6 +156,16 @@ class GatewayClientTest {
     }
 
     @Test
+    void boundedCompletionAddsAnOutputLimitWithoutChangingOrdinaryCalls() {
+        var gateway = chatGateway("/v1");
+        gateway.completeBounded(List.of(new ChatMessage("user", "学习计划")), 4096);
+        assertThat(chatRequest.get()).contains("\"max_tokens\":4096");
+        gateway.complete(List.of(new ChatMessage("user", "普通问题")));
+        assertThat(chatRequest.get()).doesNotContain("max_tokens");
+        assertThatThrownBy(() -> gateway.completeBounded(List.of(), 4097)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void chatRejectsEmptyAndProviderErrorResponses() {
         assertThatThrownBy(() -> chatGateway("/empty").complete(
                 List.of(new ChatMessage("user", "问题"))))

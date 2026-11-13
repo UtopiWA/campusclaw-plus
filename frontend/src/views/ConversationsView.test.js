@@ -55,7 +55,7 @@ describe('ConversationsView', () => {
 
     expect(wrapper.text()).toContain('已有答案 [1]')
     expect(wrapper.text()).toContain('[1] 函数讲义')
-    expect(wrapper.find('.chat-citation p').text()).toBe('<b>安全片段</b>')
+    expect(wrapper.find('.chat-citation > .assistant-markdown').text()).toBe('<b>安全片段</b>')
     expect(wrapper.find('.chat-citation b').exists()).toBe(false)
     expect(wrapper.find('.chat-citation a').attributes('data-to')).toBe('/materials?material=7&chunk=42')
     expect(wrapper.text()).toContain('回答已中断')
@@ -141,7 +141,7 @@ describe('ConversationsView', () => {
     await flushPromises()
 
     const toggle = wrapper.find('.chat-citation-toggle')
-    const excerpt = wrapper.find('.chat-citation p')
+    const excerpt = wrapper.find('.chat-citation > .assistant-markdown')
     expect(excerpt.text()).toBe(multilineExcerpt)
     expect(excerpt.attributes('style')).toContain('display: none')
     expect(toggle.text()).toBe('展开片段')

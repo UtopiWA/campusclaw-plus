@@ -27,6 +27,11 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
     List<Submission> findByAssignmentIdAndClassIdOrderByStudentIdAscVersionDesc(
             Long assignmentId, Long classId, Pageable pageable);
 
+    @Query("select s from Submission s where s.assignmentId=:assignmentId and s.classId=:classId "
+            + "and not exists (select n.id from Submission n where n.assignmentId=s.assignmentId "
+            + "and n.classId=s.classId and n.studentId=s.studentId and n.version>s.version)")
+    List<Submission> findLatestForRoster(@Param("assignmentId") Long assignmentId, @Param("classId") Long classId);
+
     List<Submission> findByStudentIdAndAssignmentIdInOrderByIdDesc(
             Long studentId, Collection<Long> assignmentIds);
 

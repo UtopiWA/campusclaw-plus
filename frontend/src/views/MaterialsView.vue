@@ -2,6 +2,10 @@
 import { feedbackRef } from '../services/feedback.js'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import PagedList from '../components/PagedList.vue'
+import MaterialTags from '../components/MaterialTags.vue'
+import { getLearningTags } from '../services/learning.js'
+import { renderAssistantMarkdown } from '../utils/assistantMarkdown.js'
 import AppIcon from '../components/AppIcon.vue'
 import AppShell from '../components/AppShell.vue'
 import BaseModal from '../components/BaseModal.vue'
@@ -22,11 +26,21 @@ const retryBusyIds = ref(new Set())
 const error = feedbackRef('error')
 const notice = feedbackRef('success')
 const query = ref('')
+const selectedTag = ref('')
+const tagCatalog = ref({ tags: [], materialTags: [] })
+const tagManager = ref(null)
+let tagsAlive = true
+async function loadTags() {
+  try { const data = await getLearningTags(); if (tagsAlive) tagCatalog.value = data }
+  catch (exception) { if (tagsAlive) error.value = exception.message || '标签加载失败' }
+}
+const tagsFor = (id) => tagCatalog.value.materialTags.filter((row) => row.id === id).map((row) => tagCatalog.value.tags.find((tag) => tag.id === row.pointId)).filter(Boolean)
 const retrievalQuery = ref('')
 const retrievalMode = ref('hybrid')
 const retrievalBusy = ref(false)
 const retrievalError = feedbackRef('error')
 const retrievalResult = ref(null)
+const retrievalPageKey = ref(0)
 const uploadOpen = ref(false)
 const dragActive = ref(false)
 const viewOpen = ref(false)
@@ -54,9 +68,9 @@ const fileCount = computed(() => materials.value.filter((material) => material.h
 // Filtering stays client-side because the lesson-sized material list is already scoped by class on the server.
 const filteredMaterials = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase('zh-CN')
-  if (!keyword) return materials.value
   return materials.value.filter((material) =>
-    [material.title, material.originalFilename].some((value) => value?.toLocaleLowerCase('zh-CN').includes(keyword)),
+    (!keyword || [material.title, material.originalFilename].some((value) => value?.toLocaleLowerCase('zh-CN').includes(keyword)))
+      && (!selectedTag.value || tagsFor(material.id).some((tag) => tag.id === Number(selectedTag.value))),
   )
 })
 
@@ -72,6 +86,7 @@ async function searchMaterials() {
   retrievalError.value = ''
   try {
     retrievalResult.value = await searchKnowledge(value, retrievalMode.value)
+    retrievalPageKey.value++
   } catch (exception) {
     retrievalError.value = exception.message
   } finally {
@@ -388,7 +403,9 @@ function reopenCurrentHit(hit) {
   if (material) viewMaterial(material, hit.chunkId)
 }
 
+onBeforeUnmount(() => { tagsAlive = false })
 onMounted(async () => {
+  loadTags()
   document.addEventListener('visibilitychange', handleVisibilityChange)
   await loadMaterials()
   await openRouteContext()
@@ -426,17 +443,16 @@ onBeforeUnmount(() => {
 
         <div v-if="retrievalResult" class="lecture-results" aria-live="polite">
           <div class="lecture-results-summary"><strong>检索结果</strong><span>{{ retrievalResult.hits?.length ? `找到 ${retrievalResult.hits.length} 条依据` : '没有找到可用依据' }}</span></div>
-          <ol v-if="retrievalResult.hits?.length" class="chat-hit-list">
-            <li v-for="(hit, hitIndex) in retrievalResult.hits" :key="hit.chunkId" class="chat-hit">
-              <span class="chat-hit-number">{{ hitIndex + 1 }}</span>
+          <PagedList v-if="retrievalResult.hits?.length" :items="retrievalResult.hits" label="检索结果" :reset-key="retrievalPageKey" v-slot="{ pageItems, offset }"><ol class="chat-hit-list"><li v-for="(hit, hitIndex) in pageItems" :key="hit.chunkId" class="chat-hit">
+              <span class="chat-hit-number">{{ offset + hitIndex + 1 }}</span>
               <div class="chat-hit-main">
-                <div class="chat-hit-title"><strong>{{ hit.materialTitle }}</strong><span>结果 {{ hitIndex + 1 }}</span></div>
-                <p>{{ hit.excerpt }}</p>
+                <div class="chat-hit-title"><strong>{{ hit.materialTitle }}</strong><span>结果 {{ offset + hitIndex + 1 }}</span></div>
+                <div class="assistant-markdown" v-html="renderAssistantMarkdown(hit.excerpt)"></div>
                 <details class="chat-hit-details"><summary>检索详情</summary><div class="chat-hit-meta"><span>处理文本位置 {{ hit.startOffset }}–{{ hit.endOffset }}</span><span>综合 {{ score(hit.finalScore) }}</span><span v-if="hit.keywordRank">关键词 #{{ hit.keywordRank }}</span><span v-if="hit.vectorRank">语义 #{{ hit.vectorRank }}</span></div></details>
               </div>
               <RouterLink :to="`/materials?material=${hit.materialId}&chunk=${hit.chunkId}`" @click="reopenCurrentHit(hit)">查看上下文</RouterLink>
             </li>
-          </ol>
+          </ol></PagedList>
           <div v-else class="chat-no-result"><AppIcon name="search" /><span>{{ retrievalResult.message || '资料中未找到相关内容' }}</span></div>
         </div>
       </section>
@@ -455,10 +471,11 @@ onBeforeUnmount(() => {
 
 
 
+      <MaterialTags v-if="isTeacher" ref="tagManager" :tags="tagCatalog.tags" :material-tags="tagCatalog.materialTags" @updated="loadTags" />
       <section class="content-card materials-card">
         <div class="content-card-header">
           <div><h2>本班讲义</h2><p>共 {{ materials.length }} 份</p></div>
-          <div class="material-list-tools">
+          <div class="material-list-tools"><label class="material-tag-filter"><span class="sr-only">按标签查找讲义</span><select v-model="selectedTag" aria-label="按标签查找讲义"><option value="">全部标签</option><option v-for="tag in tagCatalog.tags" :key="tag.id" :value="tag.id">{{ tag.name }}{{ tag.enabled ? '' : '（已停用）' }}</option></select></label>
             <label class="search-box">
               <AppIcon name="search" /><span class="sr-only">搜索讲义</span>
               <input v-model="query" type="search" placeholder="搜索标题或文件名" />
@@ -468,7 +485,7 @@ onBeforeUnmount(() => {
         </div>
 
         <div v-if="filteredMaterials.length" class="material-list">
-          <article v-for="material in filteredMaterials" :key="material.id" class="material-row">
+          <PagedList :items="filteredMaterials" label="讲义" :reset-key="`${query}-${selectedTag}`" v-slot="{ pageItems }"><article v-for="material in pageItems" :key="material.id" class="material-row">
             <div class="document-icon" :class="{ 'document-icon--virtual': !material.hasFile }">
               <AppIcon :name="material.hasFile ? 'file' : 'layers'" />
               <span>{{ material.originalFilename?.toLowerCase().endsWith('.md') ? 'MD' : material.hasFile ? 'TXT' : 'KB' }}</span>
@@ -478,6 +495,7 @@ onBeforeUnmount(() => {
                 <h3>{{ material.title }}</h3><span class="tag" :class="{ 'tag--muted': !material.hasFile }">{{ fileKind(material) }}</span>
                 <span class="index-badge" :class="`index-badge--${(material.indexStatus || 'PENDING').toLowerCase()}`">{{ indexLabel(material) }}</span>
               </div>
+              <div v-if="tagsFor(material.id).length" class="material-tag-badges"><span v-for="tag in tagsFor(material.id)" :key="tag.id" class="learning-badge">{{ tag.name }}</span></div>
               <p>{{ material.originalFilename || '系统示例知识条目（无原始文件）' }}</p>
               <div v-if="material.indexStatus === 'FAILED'" class="material-failure">
                 <p><strong>失败阶段：</strong>{{ failureStageLabel(material) }}</p>
@@ -491,14 +509,14 @@ onBeforeUnmount(() => {
             <div class="material-actions">
               <button class="button button--soft" type="button" :disabled="!material.hasFile" :aria-label="`查看 ${material.title}`" :title="material.hasFile ? '在线查看' : '系统示例条目没有原始文件'" @click="viewMaterial(material)"><AppIcon name="eye" /><span>查看</span></button>
               <button class="button button--soft" type="button" :disabled="!material.hasFile || downloadBusyId === material.id" :aria-label="`下载 ${material.title}`" :title="material.hasFile ? '下载原文件' : '系统示例条目没有原始文件'" @click="downloadMaterial(material)"><AppIcon name="download" /><span>{{ downloadBusyId === material.id ? '下载中' : '下载' }}</span></button>
-              <template v-if="isTeacher">
+              <template v-if="isTeacher"><button class="button button--soft" type="button" :aria-label="`设置 ${material.title} 标签`" @click="tagManager?.open(material)">标签</button>
                 <button v-if="material.indexStatus === 'FAILED' && material.retryable" class="button button--soft" type="button" :disabled="retryBusyIds.has(material.id)" :aria-label="`重新处理 ${material.title}`" @click="retryProcessing(material)"><AppIcon name="refresh" /><span>{{ retryBusyIds.has(material.id) ? '排队中' : '重新处理' }}</span></button>
                 <button v-if="material.indexStatus === 'READY'" class="icon-button" type="button" :aria-label="`重建索引 ${material.title}`" title="重建索引" @click="openRebuild(material)"><AppIcon name="refresh" /></button>
                 <button class="icon-button" type="button" :aria-label="`重命名 ${material.title}`" title="重命名" @click="openRename(material)"><AppIcon name="edit" /></button>
                 <button class="icon-button icon-button--danger" type="button" :aria-label="`删除 ${material.title}`" title="删除" @click="openDelete(material)"><AppIcon name="trash" /></button>
               </template>
             </div>
-          </article>
+          </article></PagedList>
         </div>
         <div v-else class="empty-state">
           <span><AppIcon :name="query ? 'search' : 'book'" :size="28" /></span>
@@ -509,7 +527,7 @@ onBeforeUnmount(() => {
     </div>
   </AppShell>
 
-  <BaseModal v-if="uploadOpen" title="上传讲义" description="上传后会自动处理，完成后即可检索。" @close="closeUpload">
+  <BaseModal v-if="uploadOpen" title="上传讲义" @close="closeUpload">
     <label class="file-drop" :class="{ 'file-drop--active': dragActive, 'file-drop--selected': selectedFile }" @dragenter.prevent="dragActive = true" @dragover.prevent="dragActive = true" @dragleave.prevent="dragActive = false" @drop.prevent="dropFile">
       <input ref="fileInput" type="file" accept=".txt,.md,text/plain,text/markdown" @change="chooseFile" />
       <span class="file-drop-icon"><AppIcon :name="selectedFile ? 'file' : 'upload'" :size="26" /></span>
@@ -529,11 +547,11 @@ onBeforeUnmount(() => {
       <section v-if="citationContext" class="citation-context" aria-label="引用上下文">
         <div class="citation-context-heading"><strong>引用片段</strong><span>处理文本位置 {{ citationContext.startOffset }}–{{ citationContext.endOffset }}</span></div>
         <article v-for="neighbor in citationContext.neighbors" :key="neighbor.chunkId" :class="{ 'citation-context-target': neighbor.target }">
-          <span>{{ neighbor.target ? '当前引用' : '相邻片段' }}</span><p>{{ neighbor.excerpt }}</p>
+          <span>{{ neighbor.target ? '当前引用' : '相邻片段' }}</span><div class="assistant-markdown" v-html="renderAssistantMarkdown(neighbor.excerpt)"></div>
         </article>
       </section>
-      <pre v-if="activeMaterial?.hasFile" class="file-preview">{{ previewContent }}</pre>
-      <p v-else class="preview-no-file">该知识条目没有原始文件，可在上方核对引用上下文。</p>
+      <div v-if="activeMaterial?.hasFile" class="file-preview assistant-markdown" v-html="renderAssistantMarkdown(previewContent)"></div>
+      <p v-else class="preview-no-file">暂无原始文件。</p>
     </template>
     <template #footer>
       <button class="button button--secondary" type="button" @click="viewOpen = false">关闭</button>
@@ -541,7 +559,7 @@ onBeforeUnmount(() => {
     </template>
   </BaseModal>
 
-  <BaseModal v-if="renameOpen" title="重命名材料" description="只修改展示标题，不改变原文件名。" @close="renameOpen = false">
+  <BaseModal v-if="renameOpen" title="重命名材料" @close="renameOpen = false">
     <form class="modal-form" @submit.prevent="rename"><label>材料标题<input v-model="renameTitle" maxlength="255" required autofocus /></label></form>
     <template #footer>
       <button class="button button--secondary" type="button" :disabled="renameBusy" @click="renameOpen = false">取消</button>
@@ -581,3 +599,9 @@ onBeforeUnmount(() => {
     </template>
   </BaseModal>
 </template>
+
+<style scoped>
+.material-tag-filter select { max-width: 180px; min-height: 40px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink-700); }
+.material-tag-badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.material-tags { margin-bottom: 24px; }
+</style>

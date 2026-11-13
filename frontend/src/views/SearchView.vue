@@ -5,6 +5,7 @@ import AppIcon from '../components/AppIcon.vue'
 import AppShell from '../components/AppShell.vue'
 import { ApiError } from '../services/api.js'
 import { askKnowledge, searchKnowledge } from '../services/retrieval.js'
+import { renderAssistantMarkdown } from '../utils/assistantMarkdown.js'
 
 const query = ref('')
 const mode = ref('hybrid')
@@ -125,23 +126,9 @@ function clearConversation() {
   query.value = ''
 }
 
-/** 只把响应中真实存在的引用编号转换为按钮，其他方括号文本保持纯文本。 */
-function answerSegments(message) {
-  const citations = new Set((message.citations || []).map((citation) => Number(citation.number)))
-  const segments = []
-  const pattern = /\[(\d+)]/g
-  let cursor = 0
-  let match
-  while ((match = pattern.exec(message.content)) !== null) {
-    if (match.index > cursor) segments.push({ type: 'text', text: message.content.slice(cursor, match.index) })
-    const number = Number(match[1])
-    segments.push(citations.has(number)
-      ? { type: 'citation', text: match[0], number }
-      : { type: 'text', text: match[0] })
-    cursor = pattern.lastIndex
-  }
-  if (cursor < message.content.length) segments.push({ type: 'text', text: message.content.slice(cursor) })
-  return segments
+function handleAnswerClick(message, event) {
+  const button = event.target.closest?.('[data-citation-number]')
+  if (button) focusCitation(message.id, Number(button.dataset.citationNumber))
 }
 
 async function focusCitation(messageIdValue, number) {
@@ -182,7 +169,7 @@ function score(value) {
         <template v-for="message in messages" :key="message.id">
           <article v-if="message.role === 'user'" class="chat-message chat-message--user">
             <div class="chat-user-wrap">
-              <div class="chat-user-bubble">{{ message.content }}</div>
+              <div class="chat-user-bubble assistant-markdown" v-html="renderAssistantMarkdown(message.content)"></div>
               <div v-if="message.status === 'error'" class="chat-message-error" role="alert">
                 <span>{{ message.error }}</span>
                 <button type="button" :disabled="busy" @click="retryMessage(message)">重试</button>
@@ -193,9 +180,7 @@ function score(value) {
           <article v-else class="chat-message chat-message--assistant">
             <div class="chat-assistant-avatar" aria-hidden="true"><AppIcon name="bot" /></div>
             <div class="chat-assistant-content">
-              <p v-if="message.kind === 'ask'" class="chat-answer">
-                <template v-for="(segment, segmentIndex) in answerSegments(message)" :key="segmentIndex"><button v-if="segment.type === 'citation'" class="chat-inline-citation" type="button" :aria-label="`查看引用 ${segment.number}`" @click="focusCitation(message.id, segment.number)">{{ segment.text }}</button><template v-else>{{ segment.text }}</template></template>
-              </p>
+              <div v-if="message.kind === 'ask'" class="chat-answer chat-markdown" @click="handleAnswerClick(message, $event)" v-html="renderAssistantMarkdown(message.content, message.citations || [])"></div>
 
               <ol v-if="message.kind === 'ask' && message.citations.length" class="chat-citations">
                 <li v-for="citation in message.citations" :id="`citation-${message.id}-${citation.number}`" :key="`${message.id}-${citation.number}`" class="chat-citation" tabindex="-1">
@@ -203,7 +188,7 @@ function score(value) {
                     <strong>[{{ citation.number }}] {{ citation.materialTitle }}</strong>
                     <RouterLink :to="`/materials?material=${citation.materialId}&chunk=${citation.chunkId}`">查看引用上下文</RouterLink>
                   </div>
-                  <p>{{ citation.excerpt }}</p>
+                  <div class="assistant-markdown" v-html="renderAssistantMarkdown(citation.excerpt)"></div>
                 </li>
               </ol>
 
@@ -217,7 +202,7 @@ function score(value) {
                     <span class="chat-hit-number">{{ hitIndex + 1 }}</span>
                     <div class="chat-hit-main">
                       <div class="chat-hit-title"><strong>{{ hit.materialTitle }}</strong><span>引用 {{ hitIndex + 1 }}</span></div>
-                      <p>{{ hit.excerpt }}</p>
+                      <div class="assistant-markdown" v-html="renderAssistantMarkdown(hit.excerpt)"></div>
                       <details class="chat-hit-details">
                         <summary>检索详情</summary>
                         <div class="chat-hit-meta">

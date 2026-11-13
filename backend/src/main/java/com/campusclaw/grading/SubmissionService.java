@@ -74,7 +74,28 @@ public class SubmissionService {
                 assignment.getId(), user.getId()).isPresent()) {
             throw new ConflictException("该作业已提交，不能再次修改作答");
         }
-        int version = 1;
+        return enqueue(assignment, user, normalized, hash, key, 1);
+    }
+
+    /** 题库服务已锁定班级、本人和题目，并确认上次批改已结束。 */
+    @Transactional
+    public SubmitAssignmentResponse submitPractice(Long assignmentId, String content, String clientKey, UserAccount user) {
+        if (user.getRole() != Role.STUDENT) throw new AccessDeniedException("Student role required");
+        String normalized = normalize(content);
+        if (normalized.isBlank() || normalized.codePointCount(0, normalized.length()) > MAX_CONTENT_CODE_POINTS) {
+            throw new BadRequestException("作答内容应为 1～10000 个字符");
+        }
+        String key = normalizeClientKey(clientKey);
+        Assignment assignment = assignments.lockForPractice(assignmentId, user.getClassId()).orElseThrow(NotFoundException::new);
+        if (key != null && submissions.findFirstByAssignmentIdAndStudentIdAndClientKey(assignmentId, user.getId(), key).isPresent()) {
+            throw new ConflictException("该提交已被新作答替换，请刷新后重试");
+        }
+        int version = submissions.findMaxVersion(assignmentId, user.getId()) + 1;
+        return enqueue(assignment, user, normalized, sha256(normalized), key, version);
+    }
+
+    private SubmitAssignmentResponse enqueue(Assignment assignment, UserAccount user, String normalized,
+                                              String hash, String key, int version) {
         Submission submission = submissions.saveAndFlush(new Submission(
                 assignment.getId(), user.getClassId(), user.getId(), normalized, hash, key, version));
         String taskId = UUID.randomUUID().toString();

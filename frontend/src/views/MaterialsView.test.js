@@ -8,6 +8,7 @@ const { apiRequest, authState, routeState } = vi.hoisted(() => ({
   routeState: { query: {} },
 }))
 
+vi.mock('../services/learning.js', () => ({ getLearningTags: vi.fn().mockResolvedValue({ tags: [], materialTags: [] }), saveLearningPoint: vi.fn(), replaceMaterialTags: vi.fn() }))
 vi.mock('../services/api.js', () => ({ apiRequest }))
 vi.mock('../services/auth.js', () => ({ authState, logout: vi.fn() }))
 vi.mock('vue-router', () => ({
@@ -15,6 +16,7 @@ vi.mock('vue-router', () => ({
   useRoute: () => routeState,
 }))
 
+import { getLearningTags } from '../services/learning.js'
 import MaterialsView from './MaterialsView.vue'
 import { clearFeedback, feedbackMessages } from '../services/feedback.js'
 
@@ -28,9 +30,25 @@ async function selectFile(wrapper, file) {
 describe('MaterialsView', () => {
   beforeEach(() => {
     clearFeedback()
+    getLearningTags.mockResolvedValue({ tags: [], materialTags: [] })
     apiRequest.mockReset()
     apiRequest.mockResolvedValue([])
     routeState.query = {}
+  })
+
+  it('combines a knowledge tag with title filtering and paginates the complete material list', async () => {
+    authState.user = { username: 'teacher-a', role: 'teacher', className: '班级 A' }
+    const files = Array.from({ length: 23 }, (_, i) => ({ id: i + 1, title: `数学讲义${i + 1}`, indexStatus: 'READY', hasFile: true }))
+    apiRequest.mockResolvedValue(files)
+    getLearningTags.mockResolvedValue({ tags: [{ id: 1, name: '分数', enabled: true }], materialTags: [{ id: 23, pointId: 1 }] })
+    const wrapper = mount(MaterialsView); await flushPromises()
+    expect(wrapper.findAll('.material-row')).toHaveLength(10)
+    await wrapper.find('[aria-label="按标签查找讲义"]').setValue('1')
+    expect(wrapper.findAll('.material-row')).toHaveLength(1)
+    expect(wrapper.find('.material-row').text()).toContain('数学讲义23')
+    await wrapper.find('.search-box input').setValue('不存在')
+    expect(wrapper.findAll('.material-row')).toHaveLength(0)
+    expect(wrapper.text()).toContain('管理标签')
   })
 
   it('shows management controls to a teacher', async () => {
@@ -168,7 +186,7 @@ describe('MaterialsView', () => {
     await flushPromises()
 
     expect(apiRequest).toHaveBeenLastCalledWith('/api/materials/9/content', { responseType: 'text' })
-    expect(wrapper.find('pre.file-preview').text()).toBe('<script>不会执行</script>')
+    expect(wrapper.find('.file-preview').text()).toBe('<script>不会执行</script>')
   })
 
   it('opens a class-scoped citation context from route parameters', async () => {
@@ -192,7 +210,7 @@ describe('MaterialsView', () => {
     expect(apiRequest).toHaveBeenCalledWith('/api/materials/9/chunks/22/context')
     expect(apiRequest).toHaveBeenCalledWith('/api/materials/9/content', { responseType: 'text' })
     expect(wrapper.find('.citation-context-target').text()).toContain('被引用的正文')
-    expect(wrapper.find('pre.file-preview').text()).toBe('完整原文件')
+    expect(wrapper.find('.file-preview').text()).toBe('完整原文件')
   })
 
   it('lets a teacher retry a retryable failed material', async () => {

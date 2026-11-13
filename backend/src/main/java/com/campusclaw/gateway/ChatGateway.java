@@ -6,6 +6,10 @@ import java.util.function.Consumer;
 public interface ChatGateway {
     String complete(List<ChatMessage> messages);
 
+    default String completeBounded(List<ChatMessage> messages, int maxTokens) {
+        return complete(messages);
+    }
+
     ChatStream openStream(List<ChatMessage> messages);
 
     interface ChatStream extends AutoCloseable {

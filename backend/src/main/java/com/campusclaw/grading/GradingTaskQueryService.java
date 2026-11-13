@@ -1,6 +1,8 @@
 package com.campusclaw.grading;
 
 import com.campusclaw.common.NotFoundException;
+import com.campusclaw.learning.QuestionBankRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import com.campusclaw.persistence.Assignment;
 import com.campusclaw.persistence.AssignmentRepository;
 import com.campusclaw.persistence.GradingResult;
@@ -18,10 +20,11 @@ import tools.jackson.databind.ObjectMapper;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
+import java.util.Comparator;
+import java.util.ArrayList;
+import com.campusclaw.persistence.Role;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -33,11 +36,21 @@ public class GradingTaskQueryService {
     private final UserAccountRepository users;
     private final ObjectMapper objectMapper;
     private final SubmissionReviewRepository reviews;
+    private final QuestionBankRepository bank;
 
     public GradingTaskQueryService(GradingTaskRepository tasks, GradingResultRepository results,
                                    SubmissionRepository submissions, AssignmentRepository assignments,
                                    UserAccountRepository users, ObjectMapper objectMapper,
                                    SubmissionReviewRepository reviews) {
+        this(tasks, results, submissions, assignments, users, objectMapper, reviews, null);
+    }
+
+    @Autowired
+    public GradingTaskQueryService(GradingTaskRepository tasks, GradingResultRepository results,
+                                   SubmissionRepository submissions, AssignmentRepository assignments,
+                                   UserAccountRepository users, ObjectMapper objectMapper,
+                                   SubmissionReviewRepository reviews, QuestionBankRepository bank) {
+        this.bank = bank;
         this.tasks = tasks;
         this.results = results;
         this.submissions = submissions;
@@ -56,6 +69,9 @@ public class GradingTaskQueryService {
             case TEACHER -> user.getClassId().equals(task.getClassId());
         };
         if (!allowed) throw new NotFoundException();
+        var assignment = assignments.findById(task.getAssignmentId()).orElseThrow(NotFoundException::new);
+        if (assignment.isPersonalPractice() && (user.getRole() != Role.STUDENT || bank == null
+                || !bank.isLatest(taskId, user.getClassId(), user.getId()))) throw new NotFoundException();
         GradingResultView result = results.findByTaskId(taskId).map(this::resultView).orElse(null);
         String content = submissions.findById(task.getSubmissionId()).map(Submission::getContent).orElse("");
         TeacherReviewView review = reviews.findBySubmissionId(task.getSubmissionId())
@@ -70,14 +86,10 @@ public class GradingTaskQueryService {
     @Transactional(readOnly = true)
     public List<TeacherSubmissionView> teacherSubmissions(Long assignmentId, UserAccount teacher) {
         Assignment assignment = assignments.findByIdAndClassId(assignmentId, teacher.getClassId())
-                .filter(Assignment::isGradable)
+                .filter(a -> a.isGradable() && !a.isPersonalPractice())
                 .orElseThrow(NotFoundException::new);
-        List<Submission> historical = submissions.findByAssignmentIdAndClassIdOrderByStudentIdAscVersionDesc(
-                assignment.getId(), teacher.getClassId(), PageRequest.of(0, 200));
-        Map<Long, Submission> latest = new java.util.LinkedHashMap<>();
-        historical.forEach(item -> latest.putIfAbsent(item.getStudentId(), item));
-        List<Submission> items = List.copyOf(latest.values());
-        if (items.isEmpty()) return List.of();
+        List<Submission> items = submissions.findLatestForRoster(assignment.getId(), teacher.getClassId());
+        Map<Long, Submission> latest = items.stream().collect(Collectors.toMap(Submission::getStudentId, item -> item));
         List<Long> submissionIds = items.stream().map(Submission::getId).toList();
         Map<Long, GradingTask> taskBySubmission = new HashMap<>();
         for (GradingTask task : tasks.findBySubmissionIdIn(submissionIds)) {
@@ -89,16 +101,20 @@ public class GradingTaskQueryService {
         }
         Map<Long, SubmissionReview> reviewBySubmission = reviews.findBySubmissionIdIn(submissionIds).stream()
                 .collect(Collectors.toMap(SubmissionReview::getSubmissionId, r -> r));
-        Set<Long> studentIds = items.stream().map(Submission::getStudentId).collect(Collectors.toSet());
-        Map<Long, String> usernames = users.findAllById(studentIds).stream()
-                .collect(Collectors.toMap(UserAccount::getId, UserAccount::getUsername));
-        return items.stream().map(submission -> {
+        List<TeacherSubmissionView> rows = new ArrayList<>();
+        for (var student : users.findByClassIdAndRoleOrderByUsernameAscIdAsc(teacher.getClassId(), Role.STUDENT)) {
+            Submission submission = latest.get(student.getId());
+            if (submission == null) {
+                rows.add(new TeacherSubmissionView(null, student.getId(), student.getUsername(), 0, null, null,
+                        null, "NOT_SUBMITTED", null, assignment.getMaxScore(), null, null, null));
+                continue;
+            }
             GradingTask task = taskBySubmission.get(submission.getId());
             GradingResult result = resultBySubmission.get(submission.getId());
             SubmissionReview review = reviewBySubmission.get(submission.getId());
-            return new TeacherSubmissionView(
+            rows.add(new TeacherSubmissionView(
                     submission.getId(), submission.getStudentId(),
-                    usernames.getOrDefault(submission.getStudentId(), "未知学生"),
+                    student.getUsername(),
                     submission.getVersion(), submission.getContent(), submission.getCreatedAt(),
                     task == null ? null : task.getTaskId(),
                     task == null ? null : task.getStatus().name(),
@@ -106,8 +122,11 @@ public class GradingTaskQueryService {
                     assignment.getMaxScore(),
                     task == null ? null : task.getFailureCode(),
                     result == null ? null : resultView(result),
-                    review == null ? null : TeacherReviewView.from(review));
-        }).toList();
+                    review == null ? null : TeacherReviewView.from(review)));
+        }
+        rows.sort(Comparator.comparing(TeacherSubmissionView::createdAt, Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(TeacherSubmissionView::studentUsername).thenComparing(TeacherSubmissionView::studentId));
+        return rows;
     }
 
     private GradingResultView resultView(GradingResult result) {
@@ -118,6 +137,7 @@ public class GradingTaskQueryService {
         } catch (Exception exception) {
             criteria = List.of();
         }
-        return new GradingResultView(result.getScore(), result.getMaxScore(), criteria, result.getRationale());
+        return new GradingResultView(result.getScore(), result.getMaxScore(), criteria, result.getRationale(),
+                com.campusclaw.learning.LegacyObjectiveGrader.MODEL.equals(result.getModelName()) ? "RULE" : "AI");
     }
 }

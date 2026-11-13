@@ -9,13 +9,34 @@ const markdown = new MarkdownIt({
 })
 
 function renderMath(source, displayMode) {
-  return katex.renderToString(source, {
+  // 兼容旧JSON把\frac等命令的首字母解析为控制字符；只修复公式中的明确命令。
+  /* eslint-disable no-control-regex -- 此处有意匹配JSON转义产生的控制字符，限定为已知公式命令。 */
+  const normalized = source
+    .replace(/\u000c(rac|box)(?=\s*\{)/g, '\\f$1')
+    .replace(/\u0008(inom|ar|egin|oxed)(?=\s*\{)/g, '\\b$1')
+    .replace(/\u0008eta\b/g, '\\beta')
+  /* eslint-enable no-control-regex */
+  return katex.renderToString(normalized, {
     displayMode,
     throwOnError: false,
     strict: 'warn',
     trust: false,
   })
 }
+
+markdown.inline.ruler.before('escape', 'math_display_inline', (state, silent) => {
+  const delimiter = state.src.startsWith('$$', state.pos) ? '$$'
+    : state.src.startsWith('\\[', state.pos) ? '\\]' : null
+  if (!delimiter) return false
+  const end = state.src.indexOf(delimiter, state.pos + 2)
+  if (end <= state.pos + 2) return false
+  if (!silent) {
+    const token = state.push('math_display_inline', 'math', 0)
+    token.content = state.src.slice(state.pos + 2, end)
+  }
+  state.pos = end + 2
+  return true
+})
 
 markdown.inline.ruler.before('escape', 'math_inline', (state, silent) => {
   if (state.src[state.pos] !== '$' || state.src[state.pos + 1] === '$') return false
@@ -55,6 +76,7 @@ markdown.block.ruler.before('fence', 'math_block', (state, startLine, endLine, s
 
   const lines = []
   const openingRemainder = firstLine.slice(2)
+  if (openingRemainder.includes(closingDelimiter) && !openingRemainder.endsWith(closingDelimiter)) return false
   if (openingRemainder.endsWith(closingDelimiter)) {
     lines.push(openingRemainder.slice(0, -2))
     state.line = startLine + 1
@@ -67,8 +89,10 @@ markdown.block.ruler.before('fence', 'math_block', (state, startLine, endLine, s
         lines.push(line.trim().slice(0, -2))
         break
       }
+      if (line.includes(closingDelimiter)) return false
       lines.push(line)
     }
+    if (nextLine === endLine) return false
     state.line = Math.min(nextLine + 1, endLine)
   }
   const token = state.push('math_block', 'math', 0)
@@ -91,11 +115,12 @@ markdown.inline.ruler.before('link', 'conversation_citation', (state, silent) =>
 })
 
 markdown.renderer.rules.math_inline = (tokens, index) => renderMath(tokens[index].content, false)
+markdown.renderer.rules.math_display_inline = (tokens, index) => renderMath(tokens[index].content, true)
 markdown.renderer.rules.math_parentheses = markdown.renderer.rules.math_inline
 markdown.renderer.rules.math_block = (tokens, index) => `${renderMath(tokens[index].content, true)}\n`
 markdown.renderer.rules.conversation_citation = (tokens, index) => {
   const number = tokens[index].meta.number
-  return `<button class="chat-inline-citation" type="button" data-citation-number="${number}">[${number}]</button>`
+  return `<button class="chat-inline-citation" type="button" data-citation-number="${number}" aria-label="查看引用 ${number}">[${number}]</button>`
 }
 
 export function renderAssistantMarkdown(content, citations = []) {
