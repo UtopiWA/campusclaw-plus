@@ -45,7 +45,8 @@ class GatewayClientTest {
         server.createContext("/v1/chat/completions", exchange -> {
             chatAuthorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
             chatRequest.set(readBody(exchange));
-            json(exchange, 200, "{\"choices\":[{\"message\":{\"content\":\"依据回答 [1]\"}}]}");
+            json(exchange, 200, "{\"choices\":[{\"message\":{\"content\":\"依据回答 [1]\"}}],"
+                    + "\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":4,\"total_tokens\":7}}");
         });
         server.createContext("/provider-error/embeddings", exchange -> {
             providerErrorCalls.incrementAndGet();
@@ -82,9 +83,12 @@ class GatewayClientTest {
                     "data: {\"choices\":[{\"delta\":{\"content\":\"第一段\"}}]}\n\n"
                             + ": heartbeat\n\n"
                             + "data: {\"choices\":[{\"delta\":{\"content\":\"与第二段\"}}]}\n\n"
+                            + "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":6,\"total_tokens\":11}}\n\n"
                             + "data: [DONE]\n\n",
                     7);
         });
+        server.createContext("/no-usage-stream/chat/completions", exchange ->
+                sse(exchange, "data: {\"choices\":[{\"delta\":{\"content\":\"回答\"}}]}\n\ndata: [DONE]\n\n", 7));
         server.createContext("/malformed-stream/chat/completions", exchange ->
                 sse(exchange, "data: {not-json}\n\ndata: [DONE]\n\n", 5));
         server.createContext("/truncated-stream/chat/completions", exchange ->
@@ -228,6 +232,28 @@ class GatewayClientTest {
             }
         }).isInstanceOf(DependencyUnavailableException.class)
                 .hasMessage("Chat service is temporarily unavailable");
+    }
+
+    @Test
+    void capturesUsageOnlyWhenProviderReturnsIt() {
+        var gateway = chatGateway("/v1");
+        var completion = gateway.completeWithUsage(List.of(new ChatMessage("user", "问题")));
+        assertThat(completion.usage()).isEqualTo(new ChatGateway.Usage(3, 4, 7));
+
+        List<String> deltas = new ArrayList<>();
+        try (ChatGateway.ChatStream stream = chatGateway("/stream")
+                .openStream(List.of(new ChatMessage("user", "问题")))) {
+            stream.consume(deltas::add);
+            assertThat(stream.usage()).isEqualTo(new ChatGateway.Usage(5, 6, 11));
+        }
+        assertThat(deltas).containsExactly("第一段", "与第二段");
+        assertThat(chatRequest.get()).contains("\"stream_options\"", "\"include_usage\":true");
+
+        try (ChatGateway.ChatStream stream = chatGateway("/no-usage-stream")
+                .openStream(List.of(new ChatMessage("user", "问题")))) {
+            stream.consume(value -> { });
+            assertThat(stream.usage()).isNull();
+        }
     }
 
     @Test

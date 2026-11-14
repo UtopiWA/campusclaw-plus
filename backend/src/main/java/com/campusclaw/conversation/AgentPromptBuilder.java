@@ -32,7 +32,8 @@ public class AgentPromptBuilder {
         history.forEach(item -> messages.add(new ChatGateway.ChatMessage(item.role(), item.content())));
         messages.add(new ChatGateway.ChatMessage("user", userMessage(
                 question, citations, toolResult.usableContexts())));
-        return new AgentTurnPlan(selectedSkill.map(Skill::getName).orElse(null), citations,
+        return new AgentTurnPlan(selectedSkill.map(Skill::getName).orElse(null),
+                selectedSkill.map(Skill::getId).orElse(null), citations,
                 toolResult.calls(), List.copyOf(messages));
     }
 

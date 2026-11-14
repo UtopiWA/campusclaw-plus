@@ -1,9 +1,13 @@
 package com.campusclaw.auth;
 
+import com.campusclaw.audit.AuditAction;
+import com.campusclaw.audit.AuditObjectType;
+import com.campusclaw.audit.SecurityAuditService;
 import com.campusclaw.persistence.ClassRoomRepository;
 import com.campusclaw.persistence.Role;
 import com.campusclaw.persistence.UserAccount;
 import com.campusclaw.persistence.UserAccountRepository;
+import org.slf4j.MDC;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.core.Authentication;
@@ -16,10 +20,13 @@ import org.springframework.stereotype.Service;
 public class CurrentUserService {
     private final UserAccountRepository users;
     private final ClassRoomRepository classRooms;
+    private final SecurityAuditService audit;
 
-    public CurrentUserService(UserAccountRepository users, ClassRoomRepository classRooms) {
+    public CurrentUserService(UserAccountRepository users, ClassRoomRepository classRooms,
+                              SecurityAuditService audit) {
         this.users = users;
         this.classRooms = classRooms;
+        this.audit = audit;
     }
 
     public UserAccount requireUser() {
@@ -43,8 +50,18 @@ public class CurrentUserService {
     }
 
     public UserAccount requireTeacher() {
+        return requireTeacher(null, null, null);
+    }
+
+    /** 写入型教师接口使用该重载，在拒绝时留下可回查的动作和对象。 */
+    public UserAccount requireTeacher(AuditAction action, AuditObjectType objectType, Long objectId) {
         UserAccount user = requireUser();
         if (user.getRole() != Role.TEACHER) {
+            if (action != null && objectType != null) {
+                audit.recordDenied(user, action, objectType, objectId,
+                        objectType == AuditObjectType.SKILL ? objectId : null,
+                        null, 403, "FORBIDDEN", MDC.get("requestId"));
+            }
             throw new AccessDeniedException("Teacher role required");
         }
         return user;

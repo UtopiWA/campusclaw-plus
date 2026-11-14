@@ -1,6 +1,7 @@
 package com.campusclaw.conversation;
 
 import com.campusclaw.agent.SkillRouter;
+import com.campusclaw.audit.SecurityAuditService;
 import com.campusclaw.common.NotFoundException;
 import com.campusclaw.gateway.ChatGateway;
 import com.campusclaw.mcp.McpToolOrchestrator;
@@ -20,6 +21,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
+import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /** 在发送首帧前完成授权、配置快照、消息落库、限定检索和上游连接。 */
@@ -33,6 +36,7 @@ public class AgentConversationService {
     private final AgentPromptBuilder prompts;
     private final ChatGateway chat;
     private final McpToolOrchestrator mcpTools;
+    private final SecurityAuditService audit;
 
     public AgentConversationService(ConversationService conversations,
                                     AssistantRepository assistants,
@@ -42,6 +46,20 @@ public class AgentConversationService {
                                     AgentPromptBuilder prompts,
                                     ChatGateway chat,
                                     McpToolOrchestrator mcpTools) {
+        this(conversations, assistants, assistantMaterials, skillRouter, retrieval, prompts,
+                chat, mcpTools, null);
+    }
+
+    @Autowired
+    public AgentConversationService(ConversationService conversations,
+                                    AssistantRepository assistants,
+                                    AssistantMaterialRepository assistantMaterials,
+                                    SkillRouter skillRouter,
+                                    RetrievalService retrieval,
+                                    AgentPromptBuilder prompts,
+                                    ChatGateway chat,
+                                    McpToolOrchestrator mcpTools,
+                                    SecurityAuditService audit) {
         this.conversations = conversations;
         this.assistants = assistants;
         this.assistantMaterials = assistantMaterials;
@@ -50,6 +68,7 @@ public class AgentConversationService {
         this.prompts = prompts;
         this.chat = chat;
         this.mcpTools = mcpTools;
+        this.audit = audit;
     }
 
     public AgentTurnPreparation prepare(Long conversationId, String question, UserAccount user) {
@@ -65,17 +84,27 @@ public class AgentConversationService {
                 : Set.of();
 
         ConversationMessage userMessage = conversations.saveUserMessage(conversationId, question, user);
-        SearchResponse search = usesKnowledgeSearch
-                ? retrieval.searchBound(question, user.getClassId(), materialIds, 4)
-                : new SearchResponse(SearchMode.HYBRID, RetrievalService.NO_EVIDENCE, List.of());
-        McpTurnResult toolResult = mcpTools.invoke(selectedSkill, question, conversationId, user);
-        List<HistoryMessage> history = conversations.historyBefore(conversationId, userMessage.getId());
-        AgentTurnPlan plan = prompts.build(assistant, selectedSkill, search.hits(), toolResult, history, question);
-        // 材料或安全工具结果任一存在即可生成；两者均为空时继续使用固定无依据答复。
-        ChatGateway.ChatStream stream = plan.citations().isEmpty() && !toolResult.hasUsableContext()
-                ? new FixedTextStream(RetrievalService.NO_EVIDENCE)
-                : chat.openStream(plan.messages());
-        return new AgentTurnPreparation(conversationId, user.getId(), user.getClassId(), plan, stream);
+        try {
+            SearchResponse search = usesKnowledgeSearch
+                    ? retrieval.searchBound(question, user.getClassId(), materialIds, 4)
+                    : new SearchResponse(SearchMode.HYBRID, RetrievalService.NO_EVIDENCE, List.of());
+            McpTurnResult toolResult = mcpTools.invoke(selectedSkill, question, conversationId, user);
+            List<HistoryMessage> history = conversations.historyBefore(conversationId, userMessage.getId());
+            AgentTurnPlan plan = prompts.build(assistant, selectedSkill, search.hits(), toolResult, history, question);
+            // 材料或安全工具结果任一存在即可生成；两者均为空时继续使用固定无依据答复。
+            ChatGateway.ChatStream stream = plan.citations().isEmpty() && !toolResult.hasUsableContext()
+                    ? new FixedTextStream(RetrievalService.NO_EVIDENCE)
+                    : chat.openStream(plan.messages());
+            return new AgentTurnPreparation(conversationId, user.getId(), user.getClassId(), plan, stream);
+        } catch (RuntimeException exception) {
+            if (audit != null) {
+                audit.recordSkillFailure(user.getClassId(), user.getId(), conversationId,
+                        selectedSkill.map(Skill::getId).orElse(null),
+                        selectedSkill.map(Skill::getName).orElse(null),
+                        "PRE_STREAM_FAILED", MDC.get("requestId"));
+            }
+            throw exception;
+        }
     }
 
     /** 未命中技能时沿用默认检索；命中技能后则尊重其 knowledge_search 显式选择。 */

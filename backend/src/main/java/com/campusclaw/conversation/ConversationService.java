@@ -2,6 +2,7 @@ package com.campusclaw.conversation;
 
 import com.campusclaw.common.BadRequestException;
 import com.campusclaw.common.NotFoundException;
+import com.campusclaw.gateway.ChatGateway;
 import com.campusclaw.persistence.Assistant;
 import com.campusclaw.persistence.AssistantRepository;
 import com.campusclaw.persistence.Conversation;
@@ -137,8 +138,8 @@ public class ConversationService {
                                                      String content, String skillName,
                                                      List<ConversationCitation> citations,
                                                      MessageStatus status) {
-        return saveAssistantMessage(conversationId, userId, classId, content, skillName, citations,
-                List.of(), status);
+        return saveAssistantMessage(conversationId, userId, classId, content, skillName, null,
+                null, null, null, citations, List.of(), status);
     }
 
     @Transactional
@@ -147,13 +148,28 @@ public class ConversationService {
                                                      List<ConversationCitation> citations,
                                                      List<ToolCallSummary> toolCalls,
                                                      MessageStatus status) {
+        return saveAssistantMessage(conversationId, userId, classId, content, skillName, null,
+                null, null, null, citations, toolCalls, status);
+    }
+
+    @Transactional
+    public ConversationMessage saveAssistantMessage(Long conversationId, Long userId, Long classId,
+                                                     String content, String skillName, Long skillId,
+                                                     ChatGateway.Usage usage, Long modelDurationMs,
+                                                     String requestId, List<ConversationCitation> citations,
+                                                     List<ToolCallSummary> toolCalls,
+                                                     MessageStatus status) {
         if (content == null || content.isBlank()) {
             throw new BadRequestException("助手消息不能为空");
         }
         Conversation conversation = conversations.findByIdAndUserIdAndClassId(conversationId, userId, classId)
                 .orElseThrow(NotFoundException::new);
         ConversationMessage message = messages.saveAndFlush(new ConversationMessage(
-                conversationId, MessageRole.ASSISTANT, content, skillName,
+                conversationId, MessageRole.ASSISTANT, content, skillName, skillId,
+                usage == null ? null : usage.promptTokens(),
+                usage == null ? null : usage.completionTokens(),
+                usage == null ? null : usage.totalTokens(),
+                modelDurationMs, requestId,
                 writeJson(citations), writeJson(toolCalls), status));
         conversation.touch();
         conversations.saveAndFlush(conversation);

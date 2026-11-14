@@ -1,5 +1,7 @@
 package com.campusclaw.agent;
 
+import com.campusclaw.audit.AuditAction;
+import com.campusclaw.audit.AuditObjectType;
 import com.campusclaw.auth.CurrentUserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -54,19 +56,22 @@ public class SkillController {
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(summary = "从技能文本创建技能", description = "仅教师可用；服务端解析并校验完整原文。")
     public SkillView create(@Valid @RequestBody SkillSourceRequest request) {
-        return skills.create(request.sourceText(), currentUsers.requireTeacher());
+        return skills.create(request.sourceText(), currentUsers.requireTeacher(
+                AuditAction.CONFIG_WRITE, AuditObjectType.SKILL, null));
     }
 
     @PutMapping("/{id}")
     @Operation(summary = "更新技能原文", description = "仅教师可用；校验成功后才覆盖已有配置。")
     public SkillView update(@PathVariable Long id, @Valid @RequestBody SkillSourceRequest request) {
-        return skills.update(id, request.sourceText(), currentUsers.requireTeacher());
+        return skills.update(id, request.sourceText(), currentUsers.requireTeacher(
+                AuditAction.CONFIG_WRITE, AuditObjectType.SKILL, id));
     }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "删除技能", description = "仅教师可用；只解除智能体绑定，不删除材料。")
     public void delete(@PathVariable Long id) {
-        skills.delete(id, currentUsers.requireTeacher());
+        skills.delete(id, currentUsers.requireTeacher(
+                AuditAction.CONFIG_WRITE, AuditObjectType.SKILL, id));
     }
 }

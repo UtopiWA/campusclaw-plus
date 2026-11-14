@@ -1,5 +1,7 @@
 package com.campusclaw.grading;
 
+import com.campusclaw.audit.AuditAction;
+import com.campusclaw.audit.AuditObjectType;
 import com.campusclaw.auth.CurrentUserService;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -70,6 +72,7 @@ public class AssignmentController {
     @PutMapping("/{id}/submissions/{submissionId}/review")
     public TeacherReviewView review(@PathVariable Long id, @PathVariable Long submissionId,
                                     @Valid @RequestBody ReviewSubmissionRequest request) {
-        return reviews.review(id, submissionId, request, currentUsers.requireTeacher());
+        return reviews.review(id, submissionId, request, currentUsers.requireTeacher(
+                AuditAction.GRADE_REVIEW, AuditObjectType.SUBMISSION, submissionId));
     }
 }

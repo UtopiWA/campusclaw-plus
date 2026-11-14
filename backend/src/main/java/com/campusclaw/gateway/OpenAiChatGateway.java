@@ -60,6 +60,11 @@ public class OpenAiChatGateway implements ChatGateway {
 
     @Override
     public String complete(List<ChatMessage> messages) {
+        return completeWithUsage(messages).text();
+    }
+
+    @Override
+    public Completion completeWithUsage(List<ChatMessage> messages) {
         return completeRequest(requestBody(messages, false));
     }
 
@@ -68,10 +73,10 @@ public class OpenAiChatGateway implements ChatGateway {
         if (maxTokens < 1 || maxTokens > 4096) throw new IllegalArgumentException("Invalid output budget");
         var body = requestBody(messages, false);
         body.put("max_tokens", maxTokens);
-        return completeRequest(body);
+        return completeRequest(body).text();
     }
 
-    private String completeRequest(Map<String, Object> body) {
+    private Completion completeRequest(Map<String, Object> body) {
         JsonNode response = requests.withClassifiedRetry("Chat service", () -> client.post()
                 .uri("/chat/completions")
                 .body(body)
@@ -82,7 +87,22 @@ public class OpenAiChatGateway implements ChatGateway {
         if (answer.isBlank()) {
             throw new DependencyUnavailableException("Chat service");
         }
-        return answer;
+        return new Completion(answer, response == null ? null : usage(response.path("usage")));
+    }
+
+    /** 只转换供应商明确返回的非负整数；缺失或非法值保持 null，绝不补 0。 */
+    private static Usage usage(JsonNode node) {
+        Integer prompt = tokenCount(node, "prompt_tokens");
+        Integer completion = tokenCount(node, "completion_tokens");
+        Integer total = tokenCount(node, "total_tokens");
+        return prompt == null && completion == null && total == null
+                ? null : new Usage(prompt, completion, total);
+    }
+
+    private static Integer tokenCount(JsonNode node, String field) {
+        JsonNode value = node.path(field);
+        return value.isIntegralNumber() && value.canConvertToInt() && value.asInt() >= 0
+                ? value.asInt() : null;
     }
 
     @Override
@@ -143,6 +163,10 @@ public class OpenAiChatGateway implements ChatGateway {
         body.put("messages", messages.stream()
                 .map(message -> Map.of("role", message.role(), "content", message.content()))
                 .toList());
+        if (stream) {
+            // OpenAI-compatible 供应商在最后一个 usage-only chunk 返回真实用量；不支持时保持 null。
+            body.put("stream_options", Map.of("include_usage", true));
+        }
         if (reasoningEffort != null && !reasoningEffort.isBlank()) {
             body.put("reasoning_effort", reasoningEffort);
         }
@@ -160,11 +184,22 @@ public class OpenAiChatGateway implements ChatGateway {
         private final InputStream input;
         private final ObjectMapper objectMapper;
         private final java.time.Duration readTimeout;
+        private volatile Usage usage;
 
         private OpenAiChatStream(InputStream input, ObjectMapper objectMapper, java.time.Duration readTimeout) {
             this.input = input;
             this.objectMapper = objectMapper;
             this.readTimeout = readTimeout;
+        }
+
+        @Override
+        public boolean modelBacked() {
+            return true;
+        }
+
+        @Override
+        public Usage usage() {
+            return usage;
         }
 
         @Override
@@ -219,6 +254,10 @@ public class OpenAiChatGateway implements ChatGateway {
             String payload = data.toString();
             if ("[DONE]".equals(payload)) return true;
             JsonNode event = objectMapper.readTree(payload);
+            Usage parsedUsage = OpenAiChatGateway.usage(event.path("usage"));
+            if (parsedUsage != null) {
+                usage = parsedUsage;
+            }
             JsonNode content = event.path("choices").path(0).path("delta").path("content");
             if (!content.isMissingNode() && !content.isNull()) {
                 String value = content.asText();

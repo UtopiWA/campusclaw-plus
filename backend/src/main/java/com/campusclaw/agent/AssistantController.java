@@ -1,5 +1,7 @@
 package com.campusclaw.agent;
 
+import com.campusclaw.audit.AuditAction;
+import com.campusclaw.audit.AuditObjectType;
 import com.campusclaw.auth.CurrentUserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -54,13 +56,15 @@ public class AssistantController {
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(summary = "创建智能体", description = "仅教师可用；技能与材料绑定会在同一事务内保存。")
     public AssistantView create(@Valid @RequestBody AssistantConfigRequest request) {
-        return assistants.create(request, currentUsers.requireTeacher());
+        return assistants.create(request, currentUsers.requireTeacher(
+                AuditAction.CONFIG_WRITE, AuditObjectType.ASSISTANT, null));
     }
 
     @PutMapping("/{id}")
     @Operation(summary = "更新智能体", description = "仅教师可用；提交完整配置并原子替换绑定。")
     public AssistantView update(@PathVariable Long id, @Valid @RequestBody AssistantConfigRequest request) {
-        return assistants.update(id, request, currentUsers.requireTeacher());
+        return assistants.update(id, request, currentUsers.requireTeacher(
+                AuditAction.CONFIG_WRITE, AuditObjectType.ASSISTANT, id));
     }
 
     @DeleteMapping("/{id}")
@@ -68,6 +72,7 @@ public class AssistantController {
     @Operation(summary = "删除智能体", description = "仅教师可用；已有历史会话的智能体不能删除，可改为停用。")
     @ApiResponse(responseCode = "409", description = "智能体已有历史会话")
     public void delete(@PathVariable Long id) {
-        assistants.delete(id, currentUsers.requireTeacher());
+        assistants.delete(id, currentUsers.requireTeacher(
+                AuditAction.CONFIG_WRITE, AuditObjectType.ASSISTANT, id));
     }
 }

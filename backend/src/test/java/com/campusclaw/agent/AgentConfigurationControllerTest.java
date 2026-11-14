@@ -57,7 +57,7 @@ class AgentConfigurationControllerTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error").value("Authentication required"));
 
-        when(currentUsers.requireTeacher()).thenThrow(new AccessDeniedException("Teacher role required"));
+        when(currentUsers.requireTeacher(any(), any(), any())).thenThrow(new AccessDeniedException("Teacher role required"));
         mvc.perform(post("/api/skills")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"sourceText\":\"合法但学生无权写入\"}"))
@@ -85,7 +85,7 @@ class AgentConfigurationControllerTest {
     void mapsInvisibleResourceTo404AndCreatesTeacherConfiguration() throws Exception {
         UserAccount teacher = mock(UserAccount.class);
         when(currentUsers.requireUser()).thenReturn(teacher);
-        when(currentUsers.requireTeacher()).thenReturn(teacher);
+        when(currentUsers.requireTeacher(any(), any(), any())).thenReturn(teacher);
         when(assistants.get(99L, teacher)).thenThrow(new NotFoundException());
         when(assistants.create(any(), any())).thenReturn(
                 new AssistantView(8L, "新助手", true, "提示", Set.of(2L), Set.of(4L)));
@@ -106,7 +106,7 @@ class AgentConfigurationControllerTest {
 
     @Test
     void rejectsUnknownControlFieldsBeforeServiceMutation() throws Exception {
-        when(currentUsers.requireTeacher()).thenReturn(mock(UserAccount.class));
+        when(currentUsers.requireTeacher(any(), any(), any())).thenReturn(mock(UserAccount.class));
 
         mvc.perform(put("/api/assistants/3")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -121,7 +121,7 @@ class AgentConfigurationControllerTest {
     @Test
     void deletesUnusedAssistantAndMapsConversationConflict() throws Exception {
         UserAccount teacher = mock(UserAccount.class);
-        when(currentUsers.requireTeacher()).thenReturn(teacher);
+        when(currentUsers.requireTeacher(any(), any(), any())).thenReturn(teacher);
 
         mvc.perform(delete("/api/assistants/3"))
                 .andExpect(status().isNoContent());

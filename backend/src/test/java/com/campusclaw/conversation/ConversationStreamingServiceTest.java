@@ -21,6 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
+import org.slf4j.MDC;
 
 class ConversationStreamingServiceTest {
 
@@ -30,7 +31,8 @@ class ConversationStreamingServiceTest {
         ConversationMessage saved = mock(ConversationMessage.class);
         when(saved.getId()).thenReturn(77L);
         when(conversations.saveAssistantMessage(
-                eq(9L), eq(6L), eq(2L), eq("第一段"), eq("阅读"), any(), eq(MessageStatus.COMPLETED)))
+                eq(9L), eq(6L), eq(2L), eq("第一段"), eq("阅读"), any(), any(), any(), any(),
+                any(), any(), eq(MessageStatus.COMPLETED)))
                 .thenReturn(saved);
         ConversationStreamingService service = new ConversationStreamingService(
                 conversations, new ObjectMapper(), new ConversationCitationNormalizer());
@@ -66,7 +68,8 @@ class ConversationStreamingServiceTest {
         assertThat(frames).contains("event: meta", "event: delta", "event: error", "STREAM_FAILED")
                 .doesNotContain("event: done");
         verify(conversations).saveAssistantMessage(
-                9L, 6L, 2L, "部分正文", "阅读", List.of(), MessageStatus.FAILED);
+                9L, 6L, 2L, "部分正文", "阅读", null, null, null, null,
+                List.of(), List.of(), MessageStatus.FAILED);
     }
 
     @Test
@@ -75,7 +78,8 @@ class ConversationStreamingServiceTest {
         ConversationMessage saved = mock(ConversationMessage.class);
         when(saved.getId()).thenReturn(88L);
         when(conversations.saveAssistantMessage(
-                eq(9L), eq(6L), eq(2L), eq("无依据回答。"), eq(null), any(), eq(MessageStatus.COMPLETED)))
+                eq(9L), eq(6L), eq(2L), eq("无依据回答。"), eq(null), any(), any(), any(), any(),
+                any(), any(), eq(MessageStatus.COMPLETED)))
                 .thenReturn(saved);
         ConversationStreamingService service = new ConversationStreamingService(
                 conversations, new ObjectMapper(), new ConversationCitationNormalizer());
@@ -87,7 +91,8 @@ class ConversationStreamingServiceTest {
 
         assertThat(output.toString(StandardCharsets.UTF_8)).doesNotContain("[2]");
         verify(conversations).saveAssistantMessage(
-                9L, 6L, 2L, "无依据回答。", null, List.of(), MessageStatus.COMPLETED);
+                9L, 6L, 2L, "无依据回答。", null, null, null, null, null,
+                List.of(), List.of(), MessageStatus.COMPLETED);
 
         ConversationService emptyConversations = mock(ConversationService.class);
         ByteArrayOutputStream failed = new ByteArrayOutputStream();
@@ -96,7 +101,8 @@ class ConversationStreamingServiceTest {
                 preparation(null, List.of(), consumer -> {
                     throw new DependencyUnavailableException("Chat service");
                 }), failed);
-        verify(emptyConversations, never()).saveAssistantMessage(any(), any(), any(), any(), any(), any(), any());
+        verify(emptyConversations, never()).saveAssistantMessage(
+                any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
         assertThat(failed.toString(StandardCharsets.UTF_8)).contains("event: error").doesNotContain("event: done");
     }
 
@@ -104,10 +110,12 @@ class ConversationStreamingServiceTest {
     void sendsErrorWithoutDoneWhenCompletedMessageCommitFails() {
         ConversationService conversations = mock(ConversationService.class);
         when(conversations.saveAssistantMessage(
-                eq(9L), eq(6L), eq(2L), eq("完整正文"), eq("阅读"), any(), eq(MessageStatus.COMPLETED)))
+                eq(9L), eq(6L), eq(2L), eq("完整正文"), eq("阅读"), any(), any(), any(), any(),
+                any(), any(), eq(MessageStatus.COMPLETED)))
                 .thenThrow(new IllegalStateException("database details"));
         when(conversations.saveAssistantMessage(
-                eq(9L), eq(6L), eq(2L), eq("完整正文"), eq("阅读"), any(), eq(MessageStatus.FAILED)))
+                eq(9L), eq(6L), eq(2L), eq("完整正文"), eq("阅读"), any(), any(), any(), any(),
+                any(), any(), eq(MessageStatus.FAILED)))
                 .thenThrow(new IllegalStateException("database details"));
         ByteArrayOutputStream output = new ByteArrayOutputStream();
 
@@ -142,9 +150,51 @@ class ConversationStreamingServiceTest {
         service.stream(preparation("阅读", List.of(), consumer -> consumer.accept("部分正文")), output);
 
         verify(conversations).saveAssistantMessage(
-                9L, 6L, 2L, "部分正文", "阅读", List.of(), MessageStatus.FAILED);
+                9L, 6L, 2L, "部分正文", "阅读", null, null, null, null,
+                List.of(), List.of(), MessageStatus.FAILED);
         verify(conversations, never()).saveAssistantMessage(
-                eq(9L), eq(6L), eq(2L), any(), any(), any(), eq(MessageStatus.COMPLETED));
+                eq(9L), eq(6L), eq(2L), any(), any(), any(), any(), any(), any(),
+                any(), any(), eq(MessageStatus.COMPLETED));
+    }
+
+    @Test
+    void persistsStableSkillIdUsageAndMeasuredModelDuration() {
+        ConversationService conversations = mock(ConversationService.class);
+        ConversationMessage saved = mock(ConversationMessage.class);
+        when(saved.getId()).thenReturn(91L);
+        when(conversations.saveAssistantMessage(
+                eq(9L), eq(6L), eq(2L), eq("回答"), eq("计算"), eq(12L),
+                eq(new ChatGateway.Usage(1, 2, 3)), any(), eq("req-1"), any(), any(),
+                eq(MessageStatus.COMPLETED)))
+                .thenReturn(saved);
+        MDC.put("requestId", "req-1");
+        try {
+            ChatGateway.ChatStream stream = new ChatGateway.ChatStream() {
+                @Override
+                public void consume(Consumer<String> consumer) { consumer.accept("回答"); }
+
+                @Override
+                public boolean modelBacked() { return true; }
+
+                @Override
+                public ChatGateway.Usage usage() { return new ChatGateway.Usage(1, 2, 3); }
+
+                @Override
+                public void close() { }
+            };
+            AgentTurnPlan plan = new AgentTurnPlan("计算", 12L, List.of(), List.of(),
+                    List.of(new ChatGateway.ChatMessage("system", "规则")));
+            new ConversationStreamingService(conversations, new ObjectMapper(),
+                    new ConversationCitationNormalizer()).stream(
+                    new AgentTurnPreparation(9L, 6L, 2L, plan, stream), new ByteArrayOutputStream());
+        } finally {
+            MDC.remove("requestId");
+        }
+
+        verify(conversations).saveAssistantMessage(
+                eq(9L), eq(6L), eq(2L), eq("回答"), eq("计算"), eq(12L),
+                eq(new ChatGateway.Usage(1, 2, 3)), any(), eq("req-1"), any(), any(),
+                eq(MessageStatus.COMPLETED));
     }
 
     @Test
@@ -157,7 +207,8 @@ class ConversationStreamingServiceTest {
         ConversationCitation finalFirst = new ConversationCitation(
                 1, 7L, "函数讲义", 44L, 3, "定义域片段");
         when(conversations.saveAssistantMessage(
-                9L, 6L, 2L, "结论[1]", null, List.of(finalFirst), MessageStatus.COMPLETED))
+                9L, 6L, 2L, "结论[1]", null, null, null, null, null,
+                List.of(finalFirst), List.of(), MessageStatus.COMPLETED))
                 .thenReturn(saved);
         ConversationStreamingService service = new ConversationStreamingService(
                 conversations, new ObjectMapper(), new ConversationCitationNormalizer());
@@ -166,7 +217,8 @@ class ConversationStreamingServiceTest {
                 new ByteArrayOutputStream());
 
         verify(conversations).saveAssistantMessage(
-                9L, 6L, 2L, "结论[1]", null, List.of(finalFirst), MessageStatus.COMPLETED);
+                9L, 6L, 2L, "结论[1]", null, null, null, null, null,
+                List.of(finalFirst), List.of(), MessageStatus.COMPLETED);
     }
 
     @Test
@@ -177,7 +229,8 @@ class ConversationStreamingServiceTest {
         List<ToolCallSummary> calls = List.of(
                 new ToolCallSummary("formula_hint@demo", "ok", "使用距离公式"));
         when(conversations.saveAssistantMessage(
-                9L, 6L, 2L, "先列出已知量", "提示", List.of(), calls, MessageStatus.COMPLETED))
+                9L, 6L, 2L, "先列出已知量", "提示", null, null, null, null,
+                List.of(), calls, MessageStatus.COMPLETED))
                 .thenReturn(saved);
         ByteArrayOutputStream output = new ByteArrayOutputStream();
 
@@ -189,7 +242,8 @@ class ConversationStreamingServiceTest {
         assertThat(frames).contains("\"toolCalls\"", "formula_hint@demo", "\"status\":\"ok\"");
         assertThat(frames.indexOf("\"toolCalls\"")).isLessThan(frames.indexOf("event: delta"));
         verify(conversations).saveAssistantMessage(
-                9L, 6L, 2L, "先列出已知量", "提示", List.of(), calls, MessageStatus.COMPLETED);
+                9L, 6L, 2L, "先列出已知量", "提示", null, null, null, null,
+                List.of(), calls, MessageStatus.COMPLETED);
     }
 
     private AgentTurnPreparation preparation(String skillName, List<ConversationCitation> citations,
