@@ -4,18 +4,19 @@
 
 **当前可用：** 师生首页、讲义与标签检索、助手对话与 MCP、异步作业及教师终评、私人AI题库、掌握度统计和学习计划。登录默认进入 `/home`：教师查看班级掌握与作业进展，学生查看待交作业、计划进度和最近成绩；首页不调用模型。
 
-**当前状态：** 本阶段业务功能已完成并归档，当前无活动change。讲义和题目使用平面标签，按标签选题，不做知识图谱或难度调节；模型安排学习计划，学生主动调整。Class09～11另行推进，不纳入本阶段完成判断；验收边界见[项目状态](docs/project-status.md)。
+**当前状态：** 本阶段业务功能已完成并归档；当前活动 change 为 Class09 安全审计与门禁，实现和自动化验证完成，交叉复测、提交和归档待授权。讲义和题目使用平面标签，按标签选题，不做知识图谱或难度调节；模型安排学习计划，学生主动调整。Class10～11另行推进；验收边界见[项目状态](docs/project-status.md)。
 
 ## 文档
 
 - [项目范围与成员分工](docs/project-scope.md)：当前业务边界、模块分工与后续交付。
-- [项目状态](docs/project-status.md)：当前实现与待办；验收记录：[Class07](docs/lesson-07/README.md)、[Class08](docs/lesson-08/README.md)；[Class08 评审](docs/lesson-08/review.md)。
+- [项目状态](docs/project-status.md)：当前实现与待办；验收记录：[Class07](docs/lesson-07/README.md)、[Class08](docs/lesson-08/README.md)、[Class09](docs/lesson-09/README.md)；[Class08 评审](docs/lesson-08/review.md)。
 - [师生首页](docs/home/README.md)：图表、统计口径和验收步骤。
 - [项目规则](AGENTS.md) 与 [主规格](openspec/specs/)：开发约束和已实现行为契约。
 - 工程规范：[产品](docs/standards/01-product.md)、[后端](docs/standards/02-backend.md)、[安全](docs/standards/03-security.md)、[测试与评审](docs/standards/04-testing.md)、[运维](docs/standards/05-operations.md)。
 - [接口回归说明](apitest/README.md)：测试环境、执行方式和报告。
 - [学习诊断与辅导](docs/learning/README.md)：讲义标签、作业与私人题库、学习计划、掌握度统计和验收步骤。
 - [Class08 安全自查](reports/security-precheck.md)：授权、并发/事务、密钥与依赖结果；[独立 Docker 复核](reports/review-01.md)已完成并归档。
+- [Class09 记录](docs/lesson-09/README.md)：审计补齐、三条输入安全反例、SEC-08 和安全门禁；[修复台账](reports/security-fix-log.md)、[审计回查](reports/audit-recheck.md)、[门禁红绿](reports/gate-red-green.md)。
 
 ## 技术栈
 
@@ -98,7 +99,17 @@ python scripts/scan.py
 
 Class08 验收入口为 `python scripts/lesson08_acceptance.py basic --env-file .env.team`，支持 `pending/wait/duplicate/report`；默认从所选文件读取网页、数据库和 RabbitMQ 管理端口，地址也可用 `--base-url/--management-url` 覆盖。扫描另需 Ruff/pip-audit，建议安装在独立虚拟环境；实际结果与未执行项见 [Class08 评审](docs/lesson-08/review.md)。
 
-安全自查入口为 `python scripts/security_precheck.py --env-file .env.team`，可用 `--checks access` 只检查授权；全项会暂时停启本团队 worker 并调用模型，应在无人工提交时执行。密钥与依赖合并入口为 `python scripts/check_security.py --env-file .env.team`，需先构建前端、准备 Gitleaks 镜像，范围及退出码见[扫描说明](reports/security-baseline.md)。SEC-07 的两项审计缺口暂缓处理，原始记录保留，不属于本次同伴复核任务。
+安全自查入口为 `python scripts/security_precheck.py --env-file .env.team`，可用 `--checks access` 只检查授权、`--checks audit` 检查技能审计和拒绝回查；全项会暂时停启本团队 worker 并调用模型，应在无人工提交时执行。密钥与依赖合并入口为 `python scripts/check_security.py --env-file .env.team`，需先构建前端、准备 Gitleaks 镜像，范围及退出码见[扫描说明](reports/security-baseline.md)。
+
+Class09 安全门禁为：
+
+```powershell
+make check-security
+# Windows 无 GNU make 时使用等价入口：
+python scripts/security_gate.py --env-file .env.team
+```
+
+门禁依次执行密钥/依赖扫描、SEC-01～04 访问检查、SEC-07 审计检查、常驻安全反例和脚本测试，任一步骤失败或未完成即非零退出；退出码 0 通过、1 检查失败、2 环境/范围未完成。受控红绿证据使用 `--fault-stage <stage>` 的合成故障，不使用真实密钥；每次摘要写入 `backend/target/security-gate/`。`make check` 等价于 `python scripts/check.py --mode all`。审计查询 `GET /api/audit/events` 仅教师本班可用，支持技能、操作人和时间窗过滤。
 
 ## 开发与安全
 

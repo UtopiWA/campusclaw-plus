@@ -32,3 +32,21 @@ python scripts/security_precheck.py --env-file .env.team --checks access
 身份由 `CurrentUserService` 回查，管理入口由角色检查与服务层归属检查保护。证据入口为 `SecurityConfig`、`SkillService`、`AssistantService`、`MaterialService`、`AssignmentService` 及对应集成测试；自动脚本在 [security_precheck.py](../scripts/security_precheck.py) 中同时核对响应和数据库。
 
 覆盖结论限于本表；过期/篡改令牌、同班其他人的私人会话等沿用已有测试证据，本轮没有重新执行全部权限组合。另一成员需自己运行并记录结果，不能复制本报告作为其复现。
+
+## Class09 复跑（2026-11-14）
+
+命令：
+
+```bash
+PY=.venv-review/Scripts/python.exe
+$PY scripts/security_precheck.py --env-file .env.team --checks access
+$PY scripts/security_precheck.py --env-file .env.team --checks audit
+```
+
+- 访问 run `ac98e1bc125d`：exit 0，execution/cleanup complete。匿名六接口均 401；跨班材料 404；本班检索命中、跨班 0；学生配置写入 403/403 且配置哈希不变；学生创建作业/终评 403，增量 0。
+- 本轮 access 检查扩充了 `/api/questions`、`/api/learning/profile`、`/api/learning/plan`、`/api/home/student`、`/api/home/teacher`、`/api/learning/analytics` 的匿名 401 检查；结果均符合预期。
+- 审计 run `365c1eb50877`：exit 0。学生配置写入仍 403，同时 `security_audit_events` 写入 `CONFIG_WRITE/DENIED`（HTTP 403），教师按学生/时间窗可查；SEC-07 技能执行七类字段齐全。
+- 新审计查询 `GET /api/audit/events` 仅教师本班：学生 403，B 班教师返回空集合；未发现跨班泄露。
+- 未授权终评的拒绝审计在 `sec08-experiment.md` 的第四步中复核；数据库 `submission_reviews`、`grading_results`、`grading_tasks` 计数不变。
+
+覆盖边界：本轮没有逐一重放所有历史权限组合；新增学习/首页写入口仅做了匿名 401 和既有角色/归属回归，成员独立复测仍待执行。

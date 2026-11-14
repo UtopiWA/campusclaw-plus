@@ -52,3 +52,20 @@ python scripts/check_security.py --env-file .env.team
 全项自查 `72756d460899` 的真实计算器调用：操作人 `student-a1`、状态 `ok`、耗时 14 ms；会话消息保留技能名称。工具审计没有技能 ID，模型用量没有采集，`tokenUsage=null`，不得记为 0。本轮安全基线 **SEC-07 红**，与上述同文候选分开处理。
 
 合成审计已随本轮资源清理，不能按旧编号查询后误判缺日志。用户已决定暂时搁置技能 ID 和 Token 用量，不纳入本次复核、修复任务或归档前置条件；原始红项保留。后续若启动改进，再明确技能关联和模型 usage 的采集/保存契约；当前没有增加业务字段。总表及其他证据见[安全自查](security-precheck.md)。
+
+## Class09 当日扫描（2026-11-14）
+
+候选：`master` @ `5d9d765` 加本轮工作区修改；环境为团队七服务 Docker 栈（`campusclaw-plus` / `campusclaw_plus`），私有 `.env.team`，Gitleaks v8.24.3。原始摘要：`backend/target/security-check/summary.json`。
+
+| 范围 | 实际结果 |
+| --- | --- |
+| Git 历史 | 本地可达到 25 个提交，Gitleaks 0 命中 |
+| 当前公开文件 | 552 个跟踪/未跟踪未忽略文件，0 命中 |
+| 前端构建 | 当前 `frontend/dist`，0 命中 |
+| 七服务日志 | backend/frontend/grading-worker/mcp-demo/mysql/qdrant/rabbitmq，0 命中 |
+| 私有配置精确比对 | 0 个候选；演示口令和 MCP/JWT/数据库口令均为独立随机值 |
+| 依赖/静态检查 | 前端 ESLint、npm audit、Python Ruff、pip-audit、Java Checkstyle、SpotBugs 通过；Java OSV 124/124 查询完成，0 findings，high/critical 0；`scan.py` exit 0 |
+
+密钥阶段 exit 0，依赖阶段 `complete=true`、exit 0。最终门禁 run `20261114T123734Z-41820` 的 scan 阶段同样 exit 0。首次基线曾因 `JAVA_HOME` 指向 Java 8 使依赖阶段 exit 2，该未完成记录保留；门禁在 Corretto 17 环境重跑后完成。工具版本、计数和退出码以 `backend/target/security-check/summary.json` 和 `backend/target/scan-logs/` 为准。
+
+处置：未发现需要保留的密钥候选，也未添加白名单或降低规则；没有用临时泄露制造扫描结果。
