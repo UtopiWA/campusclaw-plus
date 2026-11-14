@@ -1,11 +1,13 @@
 <script setup>
 import { onBeforeUnmount, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import AppShell from '../components/AppShell.vue'
 import MasteryTable from '../components/MasteryTable.vue'
 import LearningPlan from '../components/LearningPlan.vue'
 import { getLearningProfile } from '../services/learning.js'
 import { showFeedback } from '../services/feedback.js'
 const props = defineProps({ section: { type: String, default: 'mastery' } })
+const route = useRoute()
 const data = ref(null)
 const loading = ref(true)
 const failed = ref(false)
@@ -39,7 +41,7 @@ onBeforeUnmount(() => { alive = false; revision++; controller?.abort() })
     <template v-if="section === 'mastery'">
       <p v-if="loading" class="content-card learning-empty">正在读取学情…</p>
       <section v-else-if="failed" class="content-card learning-empty"><p>学情暂时无法读取。</p><button class="button button--soft" @click="load">重新加载</button></section>
-      <MasteryTable v-else-if="data" :points="data.points" />
+      <MasteryTable v-else-if="data" :points="data.points" :tag="String(route.query.tag || '')" :state="String(route.query.state || '')" />
     </template>
     <LearningPlan v-else />
   </div></AppShell>

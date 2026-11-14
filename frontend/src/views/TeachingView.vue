@@ -1,11 +1,13 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import AppShell from '../components/AppShell.vue'
 import MasteryTable from '../components/MasteryTable.vue'
 import { getClassLearning } from '../services/learning.js'
 import { showFeedback } from '../services/feedback.js'
 const from = ref('')
 const to = ref('')
+const route = useRoute()
 const data = ref(null)
 const loading = ref(true)
 const failed = ref(false)
@@ -29,6 +31,6 @@ onBeforeUnmount(() => { alive = false; revision++; controller.abort() })
     <form class="content-card learning-card learning-inline-form" @submit.prevent="load"><label>开始日期<input v-model="from" type="date" /></label><label>结束日期<input v-model="to" type="date" /></label><button class="button button--primary" :disabled="loading">查询</button><button type="button" class="button button--soft" :disabled="loading" @click="from = ''; to = ''; load()">全部时间</button></form>
     <p v-if="loading" class="content-card learning-empty">正在读取学情…</p>
     <section v-else-if="failed" class="content-card learning-empty"><p>学情暂时无法读取。</p><button class="button button--soft" @click="load">重新加载</button></section>
-    <MasteryTable v-else-if="data" :points="data.points" :students="data.students" teacher />
+    <MasteryTable v-else-if="data" :points="data.points" :tag="String(route?.query?.tag || '')" :state="String(route?.query?.state || '')" :students="data.students" teacher />
   </div></AppShell>
 </template>

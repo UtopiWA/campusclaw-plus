@@ -2,14 +2,15 @@
 
 基于 CampusClaw 扩展的智能学习诊断与个性化辅导系统，面向班级教学中的教师与学生。
 
-**当前可用：** 登录与班级隔离、材料检索、助手对话与 MCP、异步作业及教师终评；本轮新增讲义标签与筛选、作业标签继承、全班作答名单与分页、掌握度统计，独立题库及私人AI练习、学习计划；作业和题库使用逐行列表与独立详情，“我的学情”分掌握情况、学习计划两个子页。
+**当前可用：** 师生首页、讲义与标签检索、助手对话与 MCP、异步作业及教师终评、私人AI题库、掌握度统计和学习计划。登录默认进入 `/home`：教师查看班级掌握与作业进展，学生查看待交作业、计划进度和最近成绩；首页不调用模型。
 
-**交付状态：** Class08、依赖升级及学习模块的规格均已同步归档，技术验证及验收边界见[项目状态](docs/project-status.md)。掌握统计使用明确规则；学习计划由模型在可访问资源范围内安排具体讲义、题目和每日时间，服务端校验后保存；题库作答按次调用AI批改。公网部署等最终交付仍待完成。
+**交付状态：** Class08、依赖升级、学习模块及师生首页已归档，当前无活动change。验收边界见[项目状态](docs/project-status.md)。掌握统计按规则计算；模型学习计划经服务端校验后保存，题库作答按次调用AI批改。公网部署等最终交付仍待完成。
 
 ## 文档
 
 - [项目范围与成员分工](docs/project-scope.md)：完整目标、现有缺口与分阶段交付。
 - [项目状态](docs/project-status.md)：当前实现与待办；验收记录：[Class07](docs/lesson-07/README.md)、[Class08](docs/lesson-08/README.md)；[Class08 评审](docs/lesson-08/review.md)。
+- [师生首页](docs/home/README.md)：图表、统计口径和验收步骤。
 - [项目规则](AGENTS.md) 与 [主规格](openspec/specs/)：开发约束和已实现行为契约。
 - 工程规范：[产品](docs/standards/01-product.md)、[后端](docs/standards/02-backend.md)、[安全](docs/standards/03-security.md)、[测试与评审](docs/standards/04-testing.md)、[运维](docs/standards/05-operations.md)。
 - [接口回归说明](apitest/README.md)：测试环境、执行方式和报告。

@@ -36,6 +36,17 @@ describe('MaterialsView', () => {
     routeState.query = {}
   })
 
+  it('opens a whole material from a homepage plan without requiring a chunk id', async () => {
+    authState.user = { role: 'student' }
+    routeState.query = { material: '9' }
+    apiRequest.mockImplementation(path => Promise.resolve(path.endsWith('/content') ? '# Reference' : [{ id: 9, title: 'Reference', hasFile: true, indexStatus: 'READY' }]))
+    const wrapper = mount(MaterialsView); await flushPromises()
+    expect(apiRequest).toHaveBeenCalledWith('/api/materials/9/content', { responseType: 'text' })
+    expect(wrapper.find('[role="dialog"] h1').text()).toBe('Reference')
+    expect(apiRequest.mock.calls.some(([path]) => path.includes('/chunks/'))).toBe(false)
+    wrapper.unmount()
+  })
+
   it('combines a knowledge tag with title filtering and paginates the complete material list', async () => {
     authState.user = { username: 'teacher-a', role: 'teacher', className: '班级 A' }
     const files = Array.from({ length: 23 }, (_, i) => ({ id: i + 1, title: `数学讲义${i + 1}`, indexStatus: 'READY', hasFile: true }))

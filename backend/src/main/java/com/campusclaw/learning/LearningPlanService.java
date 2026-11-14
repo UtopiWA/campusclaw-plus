@@ -144,10 +144,34 @@ public class LearningPlanService {
         return new Snapshot(key, model.context(input, profile, materials, questions, completed, pending));
     }
 
+    @Transactional(readOnly = true)
+    public Map<String, Object> preview(UserAccount student) {
+        requireStudent(student);
+        var plan = repository.plan(student.getClassId(), student.getId());
+        if (plan == null) return Map.of();
+        var result = view(plan);
+        var finished = completedPracticeTasks(student, number(plan, "id"));
+        for (var task : (List<?>) result.get("tasks")) {
+            if (task instanceof Map<?, ?> row && finished.contains(numberRow(row, "id"))) {
+                // view已复制记录；只读首页展示派生进度，不持久化状态。
+                @SuppressWarnings("unchecked") var mutable = (Map<String, Object>) row;
+                mutable.put("status", "DONE");
+            }
+        }
+        return result;
+    }
+
+    private long numberRow(Map<?, ?> row, String key) { return ((Number) row.get(key)).longValue(); }
+
     private void syncPracticeTasks(UserAccount student, long planId) {
+        for (long taskId : completedPracticeTasks(student, planId)) repository.finishTask(planId, taskId);
+    }
+
+    private List<Long> completedPracticeTasks(UserAccount student, long planId) {
         var tasks = repository.planTasks(planId);
         if (tasks.stream().noneMatch(t -> "PENDING".equals(t.get("status"))
-                && "PRACTICE".equals(mapper.readTree(t.get("resourceJson").toString()).path("type").asText()))) return;
+                && "PRACTICE".equals(mapper.readTree(t.get("resourceJson").toString()).path("type").asText()))) return List.of();
+        List<Long> completed = new ArrayList<>();
         var responses = bank.summaries(student.getClassId(), student.getId());
         var available = bank.learningResources(student.getClassId());
         for (var task : tasks) {
@@ -162,8 +186,9 @@ public class LearningPlanService {
                         && "SUCCEEDED".equals(r.get("status")) && r.get("score") != null
                         && !java.time.Instant.parse(r.get("createdAt").toString()).isBefore(java.time.Instant.parse(task.get("createdAt").toString())));
             }
-            if (finished) repository.finishTask(planId, number(task, "id"));
+            if (finished) completed.add(number(task, "id"));
         }
+        return completed;
     }
 
     private record Snapshot(String key, LearningPlanModel.Context context) { }

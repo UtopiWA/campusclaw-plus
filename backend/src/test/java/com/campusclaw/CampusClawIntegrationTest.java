@@ -156,6 +156,7 @@ class CampusClawIntegrationTest {
     @Autowired com.campusclaw.learning.LearningCatalogService learningCatalog;
     @Autowired com.campusclaw.learning.LearningStudyService learningStudy;
     @Autowired com.campusclaw.learning.LearningPlanService learningPlans;
+    @Autowired com.campusclaw.home.HomeService home;
     @Autowired com.campusclaw.grading.SubmissionReviewService gradingReviews;
     @Autowired com.campusclaw.persistence.ClassRoomRepository learningClasses;
     @Autowired com.campusclaw.persistence.AssignmentRepository learningAssignments;
@@ -1338,11 +1339,100 @@ class CampusClawIntegrationTest {
         jdbc.update("UPDATE grading_tasks SET status='FAILED' WHERE task_id=?", pending.taskId());
         assertThat(((Map<?, ?>) ((java.util.List<?>) learningPlans.current(fixture.student()).get("tasks")).get(0)).get("status")).isEqualTo("PENDING");
         completeBank(questionBank.submit(fixture.student(), question, "New answer", "newer"), 50);
+        org.mockito.Mockito.clearInvocations(chat);
+        var homepage = home.student(fixture.student());
+        assertThat(((Map<?, ?>) homepage.get("plan")).get("done")).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT status FROM learning_plan_tasks WHERE id=?", String.class, taskId)).isEqualTo("PENDING");
+        verifyNoInteractions(chat);
         var finished = learningPlans.current(fixture.student());
         assertThat(((Map<?, ?>) ((java.util.List<?>) finished.get("tasks")).get(0)).get("status")).isEqualTo("DONE");
         assertThat(finished.get("message")).isEqualTo("Practice again");
         questionBank.submit(fixture.student(), question, "Another answer", "last");
         assertThat(((Map<?, ?>) ((java.util.List<?>) learningPlans.current(fixture.student()).get("tasks")).get(0)).get("status")).isEqualTo("DONE");
+    }
+
+    @Test
+    void homeSummariesRespectRoleClassLatestResultAndFinalReviewWithoutWrites() throws Exception {
+        var fixture = learningFixture();
+        var other = learningFixture();
+        var second = learningUser(com.campusclaw.persistence.Role.STUDENT, fixture.teacher().getClassId());
+        seedLearningTags(fixture);
+        var assignment = homeAssignment(fixture.teacher(), "Home class work");
+        homeAssignment(other.teacher(), "Other class sentinel");
+        var accepted = gradingSubmissions.submit(assignment.id(), "Synthetic private answer", "home", fixture.student());
+        var secondAccepted = gradingSubmissions.submit(assignment.id(), "Other student answer", "home-other", second);
+        jdbc.update("UPDATE submissions SET version=2 WHERE id=?", accepted.submissionId());
+        jdbc.update("""
+                INSERT INTO submissions(assignment_id,class_id,student_id,content,content_hash,client_key,version,created_at)
+                SELECT assignment_id,class_id,student_id,'Historical answer',SHA2('historical-home-answer',256),'old-home',1,CURRENT_TIMESTAMP(6)
+                FROM submissions WHERE id=?
+                """, accepted.submissionId());
+        jdbc.update("UPDATE grading_tasks SET status='FAILED' WHERE task_id=?", accepted.taskId());
+        var teacher = home.teacher(fixture.teacher());
+        assertThat(((Map<?, ?>) teacher.get("stats")).get("students")).isEqualTo(2);
+        assertThat(((Number) ((Map<?, ?>) teacher.get("stats")).get("assignments")).intValue()).isEqualTo(1);
+        assertThat(((Number) ((Map<?, ?>) teacher.get("stats")).get("attention")).intValue()).isEqualTo(1);
+        assertThat(((Number) ((Map<?, ?>) teacher.get("stats")).get("grading")).intValue()).isEqualTo(1);
+        assertThat(teacher.get("unknownTags")).isEqualTo(6L);
+        assertThat(teacher.get("mastery")).isEqualTo(java.util.List.of());
+        var firstAssignment = (Map<?, ?>) ((java.util.List<?>) teacher.get("assignments")).get(0);
+        assertThat(((Number) firstAssignment.get("submitted")).intValue()).isEqualTo(2);
+        gradingReviews.review(assignment.id(), accepted.submissionId(),
+                new com.campusclaw.grading.ReviewSubmissionRequest(88, "Synthetic final review"), fixture.teacher());
+        assertThat(((Number) ((Map<?, ?>) home.teacher(fixture.teacher()).get("stats")).get("attention")).intValue()).isZero();
+        var student = home.student(fixture.student());
+        var results = (java.util.List<?>) student.get("results");
+        assertThat(results).hasSize(1);
+        assertThat(((Map<?, ?>) results.get(0)).get("scoreSource")).isEqualTo("TEACHER");
+        assertThat(((Map<?, ?>) results.get(0)).get("score")).isEqualTo(88);
+        assertThat(((Map<?, ?>) student.get("plan"))).isEmpty();
+        assertThat(((java.util.List<?>) home.student(second).get("results"))).isEmpty();
+        String studentToken = login(fixture.student().getUsername());
+        String teacherToken = login(fixture.teacher().getUsername());
+        mockMvc.perform(get("/api/home/student")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/home/teacher").with(bearer(studentToken))).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/home/student").with(bearer(teacherToken))).andExpect(status().isForbidden());
+        String body = mockMvc.perform(get("/api/home/student").param("studentId", second.getId().toString())
+                        .param("classId", other.teacher().getClassId().toString()).with(bearer(studentToken)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.results[0].score").value(88)).andReturn().getResponse().getContentAsString();
+        assertThat(body).doesNotContain("Synthetic private answer", "Other student answer", "Other class sentinel", "Synthetic final review", "resourceJson");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM learning_plans WHERE student_id=?", Integer.class, fixture.student().getId())).isZero();
+        assertThat(jdbc.queryForObject("SELECT status FROM grading_tasks WHERE task_id=?", String.class, secondAccepted.taskId())).isEqualTo("PENDING");
+        verifyNoInteractions(chat);
+    }
+
+    @Test
+    void homeBoundsListsCountsAllAssignmentsAndUsesOnlyLatestPrivatePractice() throws Exception {
+        var fixture = learningFixture();
+        seedLearningTags(fixture);
+        long reference = seedLearningResources(fixture);
+        for (int i = 0; i < 7; i++) homeAssignment(fixture.teacher(), "Home " + i);
+        long question = ((Number) questionBank.save(fixture.teacher(), null, bankInput(reference, "Private exercise")).get("id")).longValue();
+        var first = questionBank.submit(fixture.student(), question, "First attempt", "first-home");
+        completeBank(first, 20);
+        var second = questionBank.submit(fixture.student(), question, "Second attempt", "second-home");
+        var pending = home.student(fixture.student());
+        assertThat(((java.util.List<?>) pending.get("results"))).isEmpty();
+        assertThat(((Number) ((Map<?, ?>) pending.get("stats")).get("grading")).intValue()).isEqualTo(1);
+        completeBank(second, 90);
+        var student = home.student(fixture.student());
+        assertThat(((Number) ((Map<?, ?>) student.get("stats")).get("pending")).intValue()).isEqualTo(7);
+        assertThat(((java.util.List<?>) student.get("pending"))).hasSize(5);
+        var results = (java.util.List<?>) student.get("results");
+        assertThat(results).hasSize(1);
+        assertThat(((Map<?, ?>) results.get(0)).get("submissionId")).isEqualTo(second.submissionId());
+        assertThat(((Map<?, ?>) results.get(0)).get("score")).isEqualTo(90);
+        assertThat(((Map<?, ?>) results.get(0)).get("kind")).isEqualTo("PRACTICE");
+        var teacher = home.teacher(fixture.teacher());
+        assertThat(((Number) ((Map<?, ?>) teacher.get("stats")).get("assignments")).intValue()).isEqualTo(7);
+        assertThat(((java.util.List<?>) teacher.get("assignments"))).hasSize(5);
+        assertThat(((java.util.List<?>) teacher.get("attention"))).isEmpty();
+        verifyNoInteractions(chat);
+    }
+
+    private com.campusclaw.grading.AssignmentView homeAssignment(com.campusclaw.persistence.UserAccount teacher, String title) {
+        return gradingAssignments.create(new com.campusclaw.grading.CreateAssignmentRequest(title, "Synthetic prompt",
+                java.util.List.of(new com.campusclaw.grading.RubricCriterion("c1", "Correct", 100))), teacher);
     }
 
     private void allowPlanRetry(long id) {

@@ -1,7 +1,7 @@
 <script setup>
 import { feedbackRef } from '../services/feedback.js'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import PagedList from '../components/PagedList.vue'
 import MaterialTags from '../components/MaterialTags.vue'
 import { getLearningTags } from '../services/learning.js'
@@ -62,6 +62,7 @@ let statusRefreshTimer = null
 let pollDelay = 1500
 let pollStartedAt = 0
 const route = useRoute()
+const router = useRouter()
 
 const isTeacher = computed(() => authState.user?.role === 'teacher')
 const fileCount = computed(() => materials.value.filter((material) => material.hasFile).length)
@@ -208,7 +209,7 @@ async function viewMaterial(material, chunkId = null) {
         .then((value) => { citationContext.value = value }))
     }
     if (material.hasFile) {
-      // 上传内容始终按纯文本展示，不执行 Markdown 或 HTML。
+      // 原文使用统一的安全 Markdown 渲染器，禁止执行上传的 HTML。
       requests.push(apiRequest(`/api/materials/${material.id}/content`, { responseType: 'text' })
         .then((value) => { previewContent.value = value }))
     }
@@ -386,14 +387,22 @@ function fileKind(material) {
 
 async function openRouteContext() {
   const materialId = Number(route.query.material)
-  const chunkId = Number(route.query.chunk)
-  if (!Number.isInteger(materialId) || !Number.isInteger(chunkId)) return
+  const chunkId = route.query.chunk == null ? null : Number(route.query.chunk)
+  if (!Number.isInteger(materialId) || materialId <= 0 || (chunkId != null && (!Number.isInteger(chunkId) || chunkId <= 0))) return
   const material = materials.value.find((item) => item.id === materialId)
   if (!material) {
     error.value = '引用材料不存在或当前账号无权访问。'
     return
   }
   await viewMaterial(material, chunkId)
+}
+
+function openRouteUpload() {
+  if (route.query.action !== 'upload') return
+  if (isTeacher.value) openUpload()
+  const query = { ...route.query }
+  delete query.action
+  router.replace({ path: route.path, query })
 }
 
 // 同一条结果被再次点击时路由参数不会变化，因此直接重开弹窗；首次点击由路由 watcher 处理。
@@ -409,8 +418,10 @@ onMounted(async () => {
   document.addEventListener('visibilitychange', handleVisibilityChange)
   await loadMaterials()
   await openRouteContext()
+  openRouteUpload()
 })
 watch(() => [route.query.material, route.query.chunk], openRouteContext)
+watch(() => route.query.action, openRouteUpload)
 onBeforeUnmount(() => {
   if (statusRefreshTimer) clearTimeout(statusRefreshTimer)
   document.removeEventListener('visibilitychange', handleVisibilityChange)

@@ -16,7 +16,7 @@ const roleLabel = computed(() => isTeacher.value ? '教师' : '学生')
 // 统一导航避免讲义检索与智能体问答出现两个职责重叠的入口。
 const navItems = computed(() => isTeacher.value
   ? [
-      { key: 'home', label: '教师首页', icon: 'home' },
+      { key: 'home', label: '教师首页', icon: 'home', to: '/home' },
       { key: 'materials', label: '讲义与检索', icon: 'book', to: '/materials' },
       { key: 'assistant-chat', label: '助手对话', icon: 'bot', to: '/conversations' },
       { key: 'assistant-config', label: '助手配置', icon: 'layers', to: '/assistants' },
@@ -25,7 +25,7 @@ const navItems = computed(() => isTeacher.value
       { key: 'teaching', label: '教学与学情', icon: 'audit', to: '/teaching' },
     ]
   : [
-      { key: 'home', label: '学生首页', icon: 'home' },
+      { key: 'home', label: '学生首页', icon: 'home', to: '/home' },
       { key: 'materials', label: '讲义与检索', icon: 'book', to: '/materials' },
       { key: 'assistant-chat', label: '助手对话', icon: 'bot', to: '/conversations' },
       { key: 'assignments', label: '作业', icon: 'homework', to: '/assignments' },

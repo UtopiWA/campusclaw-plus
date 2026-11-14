@@ -33,6 +33,16 @@ beforeEach(() => {
 })
 afterEach(() => { wrappers.forEach((wrapper) => wrapper.unmount()); wrappers = []; clearFeedback(); vi.useRealTimers() })
 
+it('consumes the homepage create action once without creating an assignment', async () => {
+  mocks.authState.user.role = 'teacher'
+  routeState.path = '/assignments'; routeState.params = {}; routeState.query = { action: 'create', q: 'math' }
+  const wrapper = mountView(); await flushPromises()
+  expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
+  expect(navigation.replace).toHaveBeenCalledWith({ path: '/assignments', query: { q: 'math' } })
+  expect(listMaterials).toHaveBeenCalledTimes(1)
+  expect(createAssignment).not.toHaveBeenCalled()
+})
+
 it.each([{ items: [] }, { items: [assignment] }])('always shows pagination below the assignment list, even with zero or one item', async ({ items }) => {
   routeState.path = '/assignments'; routeState.params = {}
   listAssignments.mockResolvedValue(items)

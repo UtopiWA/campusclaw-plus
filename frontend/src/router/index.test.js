@@ -16,7 +16,7 @@ describe('authGuard', () => {
   it('redirects an authenticated user away from the login page', async () => {
     authState.user = { id: 1, role: 'teacher' }
     const result = await authGuard({ path: '/login', fullPath: '/login', meta: {} })
-    expect(result).toBe('/materials')
+    expect(result).toBe('/home')
   })
 
   it('keeps the old search URL as a redirect to materials', () => {

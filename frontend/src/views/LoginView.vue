@@ -13,12 +13,12 @@ const route = useRoute()
 const router = useRouter()
 
 async function submit() {
-  // Successful login returns to the route captured by the guard, or enters the material workspace by default.
+  // 优先恢复登录前的页面，其余情况进入当前角色的首页。
   error.value = ''
   busy.value = true
   try {
     await login(username.value.trim(), password.value)
-    const target = typeof route.query.redirect === 'string' ? route.query.redirect : '/materials'
+    const target = typeof route.query.redirect === 'string' ? route.query.redirect : '/home'
     await router.replace(target)
   } catch (exception) {
     error.value = exception.status === 401 ? '账号或密码错误，请重新输入。' : exception.message

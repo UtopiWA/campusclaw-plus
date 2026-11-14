@@ -1,6 +1,6 @@
 # 当前项目状态
 
-最后核对：2026-11-13。本文件区分已验收能力与尚未实现的团队扩展；完整目标和分工见 [项目范围](project-scope.md)。
+最后核对：2026-11-14。本文件区分已验收能力与尚未实现的团队扩展；完整目标和分工见 [项目范围](project-scope.md)。
 
 ## 当前进度
 
@@ -24,7 +24,7 @@ Class07 已完成基线不追加无历史会话、规范破坏试验、回滚和
 
 本轮成员独立复现及交叉审核按用户明确决定取消，不记为验收通过；38项执行任务完成。团队V13及原数据保留，A班13份READY讲义、16道题库题目和6份班级作业不变；技术验收的专用环境已清理。
 
-当前无活动change。[学习诊断闭环](../openspec/changes/archive/2026-11-10-add-learning-diagnosis-loop/README.md)已于2026-11-13同步归档，归档文档的Git提交另行安排。Class08 相关两个 change 已于 2026-11-06 归档：
+当前无活动change。[师生首页](../openspec/changes/archive/2026-11-14-add-role-home-dashboards/README.md)已于2026-11-14按用户验收及归档指令同步归档，5/5技术任务完成；另一成员交叉评审未执行，不记为通过，见[首页记录](home/review.md)。未执行Git提交。[学习诊断闭环](../openspec/changes/archive/2026-11-10-add-learning-diagnosis-loop/README.md)已于2026-11-13同步归档。Class08 相关两个 change 已于 2026-11-06 归档：
 
 - [异步作业批改](../openspec/changes/archive/2026-11-03-add-async-assignment-grading/proposal.md)：参考答案综合评分、单次提交、教师终评与顶部反馈已实现；创建不调用模型、不提取评分项，旧成绩不变。验收及清理见 [第 10～14 节](lesson-08/README.md#14-独立-docker-复核与收尾2026-11-06)；指定演示数据已清理，参考材料保留。[安全自查](../reports/security-precheck.md)已纳入原 change；SEC-07 两项缺口搁置，原始红项保留，不作为本次复核或归档前置条件。另一成员已按[交接](lesson-08/handoff.md)独立复现并归档。
 - [依赖升级与团队部署](../openspec/changes/archive/2026-11-04-upgrade-spring-security-baseline/proposal.md)：Boot 4/Jackson 3 迁移及 `campusclaw-plus` 七服务已完成；OSV 124/124、npm/pip 审计零告警，默认 scan 全部通过。网页 18080、MySQL 13306、RabbitMQ 管理 15673，原项目容器/数据未变。技术结果见[本轮验收](lesson-08/README.md#8-依赖升级与独立团队-docker-部署2026-11-04)，另一成员已按此 Docker 配置独立复现，任务 4.1/4.2 完成并归档。
@@ -34,6 +34,8 @@ Class07 已完成基线不追加无历史会话、规范破坏试验、回滚和
 首次复现准备已对齐模板库名/端口、补齐MySQL RSA验收依赖及Python隔离/清理说明；34项脚本测试、合成Compose解析、独立安装及4项Python依赖零告警通过。随后在本机连接 Engine，从空库冷启动七服务并完成独立复核，详见[第14节](lesson-08/README.md#14-独立-docker-复核与收尾2026-11-06)；验收后按交接撤除本次专用栈。
 
 ## 实现范围
+
+`/home` 提供教师班级统计、掌握度条形图、作业提交环图与待处理事项；学生查看待交作业、只读计划进度、掌握状态环图和本人最近成绩。首页无模型调用、无数据迁移或新配置；操作和口径见[首页说明](home/README.md)。
 
 已实现 Bearer JWT、教师/学生角色与服务端班级隔离、材料管理与异步索引、keyword/vector/hybrid 检索、问答采信、技能与智能体配置、私人持久化流式会话、MCP 管理/调用/审计、OpenAPI、Python 接口回归工具，以及 Class08 的文本作业异步批改（RabbitMQ、事务性发件箱、独立 worker、结果查询）。
 
@@ -54,6 +56,7 @@ Class09～11 的非功能性交付工作按用户决定暂缓；公网演示仍�
 
 | Change | 任务状态 | 归档记录 |
 | --- | --- | --- |
+| 师生首页 | 5/5技术任务，用户验收通过；按本次指令归档，另一成员交叉评审未执行 | [归档说明](../openspec/changes/archive/2026-11-14-add-role-home-dashboards/README.md) |
 | 学习诊断闭环 | 38项执行完成；原4.2成员复核按用户决定取消，不记为通过 | [归档说明](../openspec/changes/archive/2026-11-10-add-learning-diagnosis-loop/README.md) |
 | 团队开发与运行基线 | 15/15，验收通过 | [归档说明](../openspec/changes/archive/2026-10-31-establish-team-baseline/README.md) |
 | MCP 工具与审计 | 31/31，验收通过 | [归档说明](../openspec/changes/archive/2026-10-28-add-mcp-tools-and-audit/README.md) |

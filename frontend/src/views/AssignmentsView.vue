@@ -280,7 +280,15 @@ async function refreshReview() {
   if (!disposed) reviewTimer = setTimeout(refreshReview, 15000)
 }
 watch(detailId, loadAssignments)
-onMounted(() => { loadAssignments(); reviewTimer = setTimeout(refreshReview, 15000) })
+function openRouteCreate() {
+  if (route.query.action !== 'create') return
+  if (isTeacher.value && !detailId.value) openCreate()
+  const query = { ...route.query }
+  delete query.action
+  router.replace({ path: route.path, query })
+}
+watch(() => route.query.action, openRouteCreate)
+onMounted(() => { loadAssignments(); openRouteCreate(); reviewTimer = setTimeout(refreshReview, 15000) })
 onBeforeUnmount(() => { disposed = true; cancelSelection(); clearTimeout(reviewTimer) })
 </script>
 

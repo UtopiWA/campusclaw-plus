@@ -307,7 +307,7 @@ public class LearningRepository {
         return rows.get(0);
     }
 
-    List<Map<String, Object>> query(String sql, Object... args) {
+    public List<Map<String, Object>> query(String sql, Object... args) {
         return jdbc.query(sql, (rs, rowNum) -> {
             Map<String, Object> item = new LinkedHashMap<>();
             var meta = rs.getMetaData();

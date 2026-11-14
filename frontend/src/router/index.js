@@ -7,13 +7,15 @@ import QuestionBankView from '../views/QuestionBankView.vue'
 import AssignmentsView from '../views/AssignmentsView.vue'
 import LearningView from '../views/LearningView.vue'
 import TeachingView from '../views/TeachingView.vue'
+import HomeView from '../views/HomeView.vue'
 import { authState, loadCurrentUser } from '../services/auth.js'
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/', redirect: '/materials' },
+    { path: '/', redirect: '/home' },
     { path: '/login', component: LoginView },
+    { path: '/home', component: HomeView, meta: { requiresAuth: true } },
     { path: '/materials', component: MaterialsView, meta: { requiresAuth: true } },
     { path: '/search', redirect: '/materials' },
     { path: '/assistants', component: AgentConfigView, meta: { requiresAuth: true, role: 'teacher' } },
@@ -24,7 +26,7 @@ const router = createRouter({
     { path: '/learning/mastery', component: LearningView, props: { section: 'mastery' }, meta: { requiresAuth: true, role: 'student' } },
     { path: '/learning/plan', component: LearningView, props: { section: 'plan' }, meta: { requiresAuth: true, role: 'student' } },
     { path: '/teaching', component: TeachingView, meta: { requiresAuth: true, role: 'teacher' } },
-    { path: '/:pathMatch(.*)*', redirect: '/materials' },
+    { path: '/:pathMatch(.*)*', redirect: '/home' },
   ],
 })
 
@@ -40,7 +42,7 @@ export async function authGuard(to) {
     return '/conversations'
   }
   if (to.path === '/login' && authState.user) {
-    return '/materials'
+    return '/home'
   }
   return true
 }

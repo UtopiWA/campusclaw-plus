@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 vi.mock('../services/learning.js', () => ({ getClassLearning: vi.fn() }))
+vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }) }))
 import TeachingView from './TeachingView.vue'
 import { getClassLearning } from '../services/learning.js'
 import { clearFeedback, feedbackMessages } from '../services/feedback.js'
