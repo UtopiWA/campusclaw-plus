@@ -47,13 +47,22 @@ class HttpClient:
         self._stream_timeout = stream_timeout
 
     def request(self, method: str, path: str, *, token: str | None = None,
-                json_body: Any | None = None) -> ApiResponse:
+                json_body: Any | None = None, data: bytes | None = None,
+                content_type: str | None = None,
+                headers: dict[str, str] | None = None) -> ApiResponse:
         """发送普通 HTTP 请求，并将非 2xx 响应保留为可断言结果。"""
-        body = None if json_body is None else json.dumps(json_body, ensure_ascii=False).encode("utf-8")
+        if data is not None and json_body is not None:
+            raise ValueError("data 与 json_body 只能二选一")
+        body = data if data is not None else (
+            None if json_body is None else json.dumps(json_body, ensure_ascii=False).encode("utf-8"))
         request = Request(self._url(path), data=body, method=method.upper())
         request.add_header("Accept", "application/json")
-        if body is not None:
+        if content_type:
+            request.add_header("Content-Type", content_type)
+        elif body is not None:
             request.add_header("Content-Type", "application/json; charset=utf-8")
+        for key, value in (headers or {}).items():
+            request.add_header(key, value)
         if token:
             request.add_header("Authorization", f"Bearer {token}")
         try:

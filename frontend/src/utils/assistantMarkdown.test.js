@@ -36,6 +36,16 @@ it('does not execute HTML, dangerous links or trusted KaTeX commands', () => {
   expect(element.querySelector('[href^="javascript:"]')).toBeNull()
 })
 
+it('renders event-attribute payloads as text without creating elements', () => {
+  const element = render('<img src=x onerror=alert(1)>\n\n<svg onload=alert(1)></svg>')
+  expect(element.querySelector('img')).toBeNull()
+  expect(element.querySelector('svg')).toBeNull()
+  expect(element.querySelector('[onerror]')).toBeNull()
+  expect(element.querySelector('[onload]')).toBeNull()
+  expect(element.textContent).toContain('<img src=x onerror=alert(1)>')
+  expect(element.textContent).toContain('<svg onload=alert(1)>')
+})
+
 it.each(['$\frac{1}{2}+\frac{1}{4}$', '$\binom{3}{2}+\beta$', '$\boxed{1}$'])('repairs only known JSON control-character damage inside math', (source) => {
   const element = render(source)
   expect(element.querySelector('.katex')).not.toBeNull()

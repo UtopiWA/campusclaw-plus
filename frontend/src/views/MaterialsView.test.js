@@ -198,6 +198,28 @@ describe('MaterialsView', () => {
 
     expect(apiRequest).toHaveBeenLastCalledWith('/api/materials/9/content', { responseType: 'text' })
     expect(wrapper.find('.file-preview').text()).toBe('<script>不会执行</script>')
+    expect(wrapper.find('.file-preview script').exists()).toBe(false)
+    expect(wrapper.find('.file-preview img').exists()).toBe(false)
+    expect(wrapper.find('.file-preview [onerror]').exists()).toBe(false)
+  })
+
+  it('renders malicious material titles as text and never as DOM elements', async () => {
+    authState.user = { username: 'student-a1', role: 'student', className: '班级 A' }
+    const payload = '<img src=x onerror=alert(1)>'
+    apiRequest.mockResolvedValue([{
+      id: 9, title: payload, originalFilename: 'reading.md', hasFile: false,
+      indexStatus: 'READY', createdAt: '2026-09-26T01:00:00Z', updatedAt: '2026-09-26T01:00:00Z',
+    }])
+    const wrapper = mount(MaterialsView, { global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } } })
+    await flushPromises()
+
+    const row = wrapper.find('.material-row')
+    expect(row.find('h3').text()).toBe(payload)
+    expect(row.find('img').exists()).toBe(false)
+    expect(row.find('script').exists()).toBe(false)
+    expect(row.find('[onerror]').exists()).toBe(false)
+    expect(row.find('h3').element.childNodes[0].nodeType).toBe(Node.TEXT_NODE)
+    wrapper.unmount()
   })
 
   it('opens a class-scoped citation context from route parameters', async () => {
