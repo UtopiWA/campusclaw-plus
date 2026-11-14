@@ -74,4 +74,4 @@ python scripts/security_gate.py --env-file .env.team
 - 红绿比较使用相同前置、相同命令和相同判据；修复前的失败记录保留在 `backend/target/security-precheck/`，未覆盖。
 - 门禁摘要写入 `backend/target/security-gate/<run>/summary.json`；原始阶段日志同目录。
 - 未降低阈值、未添加 `|| true`、未跳过范围。
-- 本轮**未提交**；修复文件在工作区，提交需用户明确授权。授权后按 SEC 编号分组提交，红绿报告再补提交哈希。
+- 本轮已按 SEC 编号分组提交：`14e43cf`（SEC-03/04/07 审计）、`7a1d56b`（SQLi/XSS/CSRF 反例）、`5d4ac3a`（SEC-08/四步演示）、`015ad6a`（安全门禁）、`474913e`（OpenSpec 与证据）。未推送、未同步主规格、未归档；`class09.md` 为未跟踪的课程文件，未纳入提交。
