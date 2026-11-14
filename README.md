@@ -4,11 +4,11 @@
 
 **当前可用：** 师生首页、讲义与标签检索、助手对话与 MCP、异步作业及教师终评、私人AI题库、掌握度统计和学习计划。登录默认进入 `/home`：教师查看班级掌握与作业进展，学生查看待交作业、计划进度和最近成绩；首页不调用模型。
 
-**交付状态：** Class08、依赖升级、学习模块及师生首页已归档，当前无活动change。验收边界见[项目状态](docs/project-status.md)。掌握统计按规则计算；模型学习计划经服务端校验后保存，题库作答按次调用AI批改。公网部署等最终交付仍待完成。
+**当前状态：** 本阶段业务功能已完成并归档，当前无活动change。讲义和题目使用平面标签，按标签选题，不做知识图谱或难度调节；模型安排学习计划，学生主动调整。Class09～11另行推进，不纳入本阶段完成判断；验收边界见[项目状态](docs/project-status.md)。
 
 ## 文档
 
-- [项目范围与成员分工](docs/project-scope.md)：完整目标、现有缺口与分阶段交付。
+- [项目范围与成员分工](docs/project-scope.md)：当前业务边界、模块分工与后续交付。
 - [项目状态](docs/project-status.md)：当前实现与待办；验收记录：[Class07](docs/lesson-07/README.md)、[Class08](docs/lesson-08/README.md)；[Class08 评审](docs/lesson-08/review.md)。
 - [师生首页](docs/home/README.md)：图表、统计口径和验收步骤。
 - [项目规则](AGENTS.md) 与 [主规格](openspec/specs/)：开发约束和已实现行为契约。
