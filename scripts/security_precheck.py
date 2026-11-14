@@ -106,7 +106,10 @@ class Precheck:
     def access(self) -> None:
         routes = [("GET", "/api/auth/me", None), ("GET", "/api/materials", None),
                   ("GET", "/api/assistants", None), ("GET", "/api/conversations", None),
-                  ("GET", "/api/assignments", None),
+                  ("GET", "/api/assignments", None), ("GET", "/api/questions", None),
+                  ("GET", "/api/learning/profile", None), ("GET", "/api/learning/plan", None),
+                  ("GET", "/api/home/student", None), ("GET", "/api/home/teacher", None),
+                  ("GET", "/api/learning/analytics", None),
                   ("POST", "/api/retrieval/search", {"query": self.mark, "mode": "keyword"})]
         for method, path, body in routes:
             self.api(method, path, body=body, expected=401)
@@ -219,17 +222,50 @@ class Precheck:
         if "event: done" not in stream or "event: error" in stream:
             raise AssertionError("synthetic skill stream did not complete")
         detail = self.api("GET", f"/api/conversations/{conversation}", self.student)
-        calls = [row for row in self.api("GET", "/api/mcp/tool-calls?limit=50", self.teacher) if row["serverId"] == server]
+        message = next(m for m in detail["messages"] if m["role"] == "assistant")
+        calls = [row for row in self.api("GET", "/api/mcp/tool-calls?limit=50", self.teacher)
+                 if row["serverId"] == server]
         if not calls or calls[0]["status"] != "ok":
             raise AssertionError("calculator audit missing or failed")
-        message = next(m for m in detail["messages"] if m["role"] == "assistant")
-        call = calls[0]
-        fields = {"actor": bool(call.get("userId") and call.get("userName")), "skillName": bool(message.get("skillName")),
-                  "skillId": "skillId" in call, "status": bool(call.get("status")),
-                  "durationMs": call.get("durationMs") is not None, "tokenUsage": call.get("tokenUsage") is not None}
-        self.record("SEC-07", {"fields": fields, "snapshot": {k: call.get(k) for k in
-                    ("id", "userId", "userName", "conversationId", "toolRef", "status", "durationMs")},
-                    "skillName": message.get("skillName"), "tokenUsage": call.get("tokenUsage")}, green=all(fields.values()))
+        student = self.api("GET", "/api/auth/me", self.student)
+        today = datetime.now(timezone.utc).date().isoformat()
+        rows = self.api("GET", f"/api/audit/events?skillId={skill}&userId={student['id']}"
+                               f"&from={today}&to={today}&limit=50", self.teacher)
+        audit_row = next((row for row in rows if row.get("source") == "MESSAGE"
+                          and row.get("skillId") == skill and row.get("objectId") == message.get("id")), None)
+        if audit_row is None:
+            raise AssertionError("skill execution audit row missing")
+        stored = self.query("SELECT skill_id,prompt_tokens,completion_tokens,total_tokens,"
+                            "model_duration_ms,request_id FROM messages WHERE id=%s AND conversation_id=%s",
+                            (message["id"], conversation))
+        fields = {
+            "actor": bool(audit_row.get("userId") and audit_row.get("userName")),
+            "time": bool(audit_row.get("createdAt")),
+            "action": audit_row.get("action") == "SKILL_EXECUTE",
+            "object": audit_row.get("objectType") == "MESSAGE" and audit_row.get("objectId") == message.get("id"),
+            "status": audit_row.get("status") == "SUCCESS",
+            "skillId": audit_row.get("skillId") == skill,
+            "usage": all(audit_row.get(key) is not None for key in
+                         ("promptTokens", "completionTokens", "totalTokens", "durationMs")),
+            "dbSnapshot": bool(stored) and stored[0][0] == skill and all(value is not None for value in stored[0][1:5]),
+            "mcpAudit": calls[0].get("status") == "ok" and calls[0].get("durationMs") is not None,
+        }
+        # 单独重放 SEC-03：学生配置写入被拒后，教师可按学生和时间窗查到拒绝记录。
+        self.api("PUT", f"/api/skills/{self.skill}", self.student, {"sourceText": self.source}, 403)
+        denial_rows = self.api("GET", f"/api/audit/events?userId={student['id']}"
+                                      f"&from={today}&to={today}&limit=50", self.teacher)
+        denial = next((row for row in denial_rows if row.get("action") == "CONFIG_WRITE"
+                       and row.get("status") == "DENIED" and row.get("objectId") == self.skill), None)
+        fields["denial"] = denial is not None and denial.get("httpStatus") == 403
+        self.record("SEC-07", {"fields": fields,
+                               "snapshot": {k: audit_row.get(k) for k in
+                                            ("source", "id", "userId", "userName", "action", "objectType",
+                                             "objectId", "skillId", "status", "promptTokens",
+                                             "completionTokens", "totalTokens", "durationMs", "requestId", "createdAt")},
+                               "dbSnapshot": list(stored[0]) if stored else None,
+                               "denial": {k: denial.get(k) for k in
+                                          ("action", "objectType", "objectId", "status", "httpStatus", "failureCode")}
+                               if denial else None}, green=all(fields.values()))
 
     def cleanup(self) -> None:
         if self.worker_stopped:
