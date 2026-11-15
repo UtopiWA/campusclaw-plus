@@ -4,7 +4,7 @@
 
 **当前可用：** 师生首页、讲义与标签检索、助手对话与 MCP、异步作业及教师终评、私人AI题库、掌握度统计和学习计划。登录默认进入 `/home`：教师查看班级掌握与作业进展，学生查看待交作业、计划进度和最近成绩；首页不调用模型。
 
-**当前状态：** 本阶段业务功能已完成并归档；当前活动 change 为 Class09 安全审计与门禁，实现和自动化验证完成，交叉复测、提交和归档待授权。讲义和题目使用平面标签，按标签选题，不做知识图谱或难度调节；模型安排学习计划，学生主动调整。Class10～11另行推进；验收边界见[项目状态](docs/project-status.md)。
+**当前状态：** 本阶段业务功能已完成并归档；Class09安全审计与门禁已完成独立复核、成员确认、规格同步及归档，当前无活动change。详见[复核结论](reports/review-04.md)。讲义和题目使用平面标签，按标签选题，不做知识图谱或难度调节；模型安排学习计划，学生主动调整。Class10～11另行推进；验收边界见[项目状态](docs/project-status.md)。
 
 ## 文档
 
@@ -55,7 +55,7 @@ docker compose --env-file .env.team up -d --no-deps --wait backend
 docker compose --env-file .env.team restart frontend
 ```
 
-不再修改既有数据库口令、JWT 或 MCP 加密键来“重新初始化”。独立复现记录、Python 环境和验收后清理见 [Class08 交接](docs/lesson-08/handoff.md)与[复核记录](reports/review-01.md)。
+轮换演示口令须同步更新数据库中的账号密码哈希；只修改环境变量不会改变现有账号密码。不通过修改数据库口令、JWT 或 MCP 加密键来“重新初始化”。独立复现记录、Python 环境和验收后清理见 [Class08 交接](docs/lesson-08/handoff.md)与[复核记录](reports/review-01.md)。
 
 默认项目名 `campusclaw-plus`，七个服务使用独立网络和具名数据卷，后端与 worker 共用一个镜像；不会复用旧 `campusclaw` 项目的容器或数据。网页/MySQL/RabbitMQ 管理端口为 `18080/13306/15673`，均只绑定本机；覆盖键分别为 `APP_PORT/MYSQL_HOST_PORT/RABBITMQ_MANAGEMENT_PORT`。每次启停均指定同一配置文件，不混用个人项目的 `.env`。镜像、卷与构建缓存随 Docker 引擎的数据盘存放，磁盘位置由 Docker Desktop 设置管理。
 

@@ -9,15 +9,18 @@ import sys
 from tempfile import TemporaryDirectory
 from threading import Thread
 import unittest
+from unittest.mock import patch
 
 APITEST_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(APITEST_ROOT))
+sys.path.insert(0, str(APITEST_ROOT.parent / "scripts"))
 
 from common.config import TestConfig  # noqa: E402
 from common.context import TestContext  # noqa: E402
 from common.http_client import HttpClient  # noqa: E402
 from common.models import CaseResult, CleanupResult  # noqa: E402
 from common.report import write_report  # noqa: E402
+from sec08_experiment import cross_teacher_credentials  # noqa: E402
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -25,7 +28,17 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802 - BaseHTTPRequestHandler 固定方法名
         length = int(self.headers.get("Content-Length", "0"))
-        self.rfile.read(length)
+        request_body = self.rfile.read(length)
+        if self.path == "/echo":
+            body = json.dumps({"body": request_body.decode("utf-8"),
+                               "origin": self.headers.get("Origin"),
+                               "contentType": self.headers.get("Content-Type"),
+                               "authorization": self.headers.get("Authorization")}).encode()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path == "/json":
             body = json.dumps({"ok": True}).encode("utf-8")
             self.send_response(200)
@@ -97,14 +110,58 @@ class CommonInfrastructureTest(unittest.TestCase):
             mcp_base_url="http://mcp-demo:8090",
             http_timeout=1,
             stream_timeout=1,
+            other_teacher_password="cross-teacher-secret",
         )
         context = TestContext(config)
         jwt = "eyJ1234567890.abcdefghijklmnop.qrstuvwxyz"
         context.add_secret(jwt)
-        safe = context.sanitize(f"teacher-secret db-secret {jwt}")
+        safe = context.sanitize(f"teacher-secret db-secret cross-teacher-secret {jwt}")
         self.assertNotIn("teacher-secret", safe)
         self.assertNotIn("db-secret", safe)
         self.assertNotIn(jwt, safe)
+        self.assertNotIn("cross-teacher-secret", safe)
+
+    def test_custom_headers_and_utf8_multipart_reach_the_server_unchanged(self):
+        boundary = "local-multipart-boundary"
+        body = (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; '
+                'filename="数学.md"\r\nContent-Type: text/markdown\r\n\r\n'
+                f'# 合成讲义\r\n--{boundary}--\r\n').encode("utf-8")
+        response = self.client.request(
+            "POST", "/echo", data=body, content_type=f"multipart/form-data; boundary={boundary}",
+            token="local-token", headers={"Origin": "https://example.invalid"})
+        self.assertEqual(200, response.status)
+        self.assertEqual(body.decode("utf-8"), response.json()["body"])
+        self.assertEqual(f"multipart/form-data; boundary={boundary}", response.json()["contentType"])
+        self.assertEqual("https://example.invalid", response.json()["origin"])
+        self.assertEqual("Bearer local-token", response.json()["authorization"])
+        with self.assertRaises(ValueError):
+            self.client.request("POST", "/echo", data=body, json_body={})
+
+    def test_cross_class_account_can_be_configured_without_changing_existing_users(self):
+        values = {"DEMO_SEED_PASSWORD": "local-password", "MYSQL_PASSWORD": "local-db-password",
+                  "MCP_AUTH_TOKEN": "local-mcp-token", "APITEST_OTHER_TEACHER_USERNAME": "peer-teacher",
+                  "APITEST_OTHER_TEACHER_PASSWORD": "independent-secret"}
+        with patch.dict("os.environ", values, clear=True), patch("common.config._read_dotenv", return_value={}):
+            config = TestConfig.load()
+            self.assertEqual((config.other_teacher_username, config.other_teacher_password),
+                             cross_teacher_credentials(values))
+        self.assertEqual("peer-teacher", config.other_teacher_username)
+        self.assertEqual("independent-secret", config.other_teacher_password)
+        self.assertIn("independent-secret", config.secret_values())
+        values.pop("APITEST_OTHER_TEACHER_USERNAME")
+        values.pop("APITEST_OTHER_TEACHER_PASSWORD")
+        with patch.dict("os.environ", values, clear=True), patch("common.config._read_dotenv", return_value={}):
+            config = TestConfig.load()
+            self.assertEqual((config.other_teacher_username, config.other_teacher_password),
+                             cross_teacher_credentials(values))
+        self.assertEqual("teacher-b", config.other_teacher_username)
+        self.assertEqual(config.teacher_password, config.other_teacher_password)
+        values["APITEST_TEACHER_PASSWORD"] = "teacher-override"
+        with patch.dict("os.environ", values, clear=True), patch("common.config._read_dotenv", return_value={}):
+            config = TestConfig.load()
+            self.assertEqual((config.other_teacher_username, config.other_teacher_password),
+                             cross_teacher_credentials(values))
+        self.assertEqual("teacher-override", config.other_teacher_password)
 
     def test_report_escapes_dynamic_text(self):
         with TemporaryDirectory() as directory:

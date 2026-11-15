@@ -55,6 +55,8 @@ class TestConfig:
     mcp_base_url: str
     http_timeout: float
     stream_timeout: float
+    other_teacher_username: str = "teacher-b"
+    other_teacher_password: str = ""
 
     @classmethod
     def load(cls) -> "TestConfig":
@@ -96,6 +98,8 @@ class TestConfig:
             mcp_base_url=value("APITEST_MCP_BASE_URL", "http://mcp-demo:8090"),
             http_timeout=_positive_number(values, "APITEST_HTTP_TIMEOUT", "20", float),
             stream_timeout=_positive_number(values, "APITEST_STREAM_TIMEOUT", "180", float),
+            other_teacher_username=value("APITEST_OTHER_TEACHER_USERNAME", "teacher-b"),
+            other_teacher_password=value("APITEST_OTHER_TEACHER_PASSWORD", teacher_password),
         )
 
     def secret_values(self) -> list[str]:
@@ -103,6 +107,7 @@ class TestConfig:
         return list({
             self.teacher_password,
             self.student_password,
+            self.other_teacher_password,
             self.db_password,
             self.mcp_auth_token,
         } - {""})

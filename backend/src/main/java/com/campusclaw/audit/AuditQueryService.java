@@ -16,6 +16,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -50,8 +51,9 @@ public class AuditQueryService {
                 window.from(), window.to(), page);
         List<SecurityAuditEvent> eventRows = events.findAuditEvents(
                 teacher.getClassId(), userId, skillId, window.from(), window.to(), page);
-        Map<Long, String> names = users.findAllById(messageRows.stream()
-                        .map(AuditMessageProjection::getUserId)
+        Map<Long, String> names = users.findAllById(Stream.concat(
+                        messageRows.stream().map(AuditMessageProjection::getUserId),
+                        eventRows.stream().map(SecurityAuditEvent::getUserId))
                         .filter(java.util.Objects::nonNull)
                         .distinct().toList()).stream()
                 .collect(Collectors.toMap(UserAccount::getId, UserAccount::getUsername));
@@ -93,7 +95,7 @@ public class AuditQueryService {
         try {
             LocalDate end = toText == null ? LocalDate.now(ZoneOffset.UTC) : LocalDate.parse(toText);
             LocalDate start = fromText == null ? end.minusDays(1) : LocalDate.parse(fromText);
-            if (start.isAfter(end) || ChronoUnit.DAYS.between(start, end) > MAX_RANGE_DAYS) {
+            if (start.isAfter(end) || ChronoUnit.DAYS.between(start, end) >= MAX_RANGE_DAYS) {
                 throw new BadRequestException("请选择不超过366天的有效审计时间范围");
             }
             return new Window(start.atStartOfDay().toInstant(ZoneOffset.UTC),

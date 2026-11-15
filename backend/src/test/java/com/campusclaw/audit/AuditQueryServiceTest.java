@@ -97,6 +97,39 @@ class AuditQueryServiceTest {
         return user;
     }
 
+    @Test
+    void resolvesAnOperatorWithOnlyDeniedEventsAndNoAssistantMessage() throws Exception {
+        var events = mock(SecurityAuditEventRepository.class);
+        var users = mock(UserAccountRepository.class);
+        var teacher = user(100L, "teacher-a", Role.TEACHER, 1L);
+        var operator = user(7L, "student-a2", Role.STUDENT, 1L);
+        var denied = new SecurityAuditEvent(1L, 7L, AuditAction.CONFIG_WRITE,
+                AuditObjectType.SKILL, 12L, null, null, AuditStatus.DENIED, 403, "FORBIDDEN",
+                null, null, null, null, "request-denied-only");
+        setCreatedAt(denied, Instant.parse("2026-11-14T10:00:00Z"));
+        when(events.findAuditMessages(any(), any(), any(), any(), any(), any(), any())).thenReturn(List.of());
+        when(events.findAuditEvents(any(), any(), any(), any(), any(), any())).thenReturn(List.of(denied));
+        when(users.findAllById(List.of(7L))).thenReturn(List.of(operator));
+
+        var result = new AuditQueryService(events, users).query(teacher, null, null, null, null, 50);
+
+        assertThat(result).singleElement().satisfies(row -> {
+            assertThat(row.userId()).isEqualTo(7L);
+            assertThat(row.userName()).isEqualTo("student-a2");
+            assertThat(row.totalTokens()).isNull();
+        });
+    }
+
+    @Test
+    void countsBothDateEndpointsInTheMaximum366DayWindow() throws Exception {
+        var service = new AuditQueryService(mock(SecurityAuditEventRepository.class), mock(UserAccountRepository.class));
+        var teacher = user(100L, "teacher-a", Role.TEACHER, 1L);
+
+        assertThat(service.query(teacher, null, null, "2025-01-01", "2026-01-01", 50)).isEmpty();
+        assertThatThrownBy(() -> service.query(teacher, null, null, "2025-01-01", "2026-01-02", 50))
+                .isInstanceOf(BadRequestException.class);
+    }
+
     private void setCreatedAt(SecurityAuditEvent event, Instant createdAt) throws Exception {
         Field field = SecurityAuditEvent.class.getDeclaredField("createdAt");
         field.setAccessible(true);

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import sys
 import time
@@ -83,6 +84,24 @@ def contains_secret(text: str, env: dict[str, str]) -> bool:
     return False
 
 
+def cross_teacher_credentials(env: dict[str, str]) -> tuple[str, str]:
+    """与接口套件保持相同的账号覆盖和密码回退顺序。"""
+    def value(key: str, default: str) -> str:
+        return os.environ.get(key, env.get(key, default)).strip()
+
+    teacher_password = value("APITEST_TEACHER_PASSWORD", env["DEMO_SEED_PASSWORD"])
+    return (value("APITEST_OTHER_TEACHER_USERNAME", "teacher-b"),
+            value("APITEST_OTHER_TEACHER_PASSWORD", teacher_password))
+
+
+def has_review_denial(rows: list[dict], object_type: str, identifier: int | None, status: int) -> bool:
+    """只采信本轮对象及实际状态，不能用其他作业的旧拒绝记录补齐证据。"""
+    return identifier is not None and any(
+        row.get("action") == "GRADE_REVIEW" and row.get("status") == "DENIED"
+        and row.get("objectType") == object_type and row.get("objectId") == identifier
+        and row.get("httpStatus") == status for row in rows)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, default=ROOT / ".env.team")
@@ -148,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:
         cross_status = None
         cross_denial = False
         try:
-            cross_teacher = acceptance.login("teacher-b", run.env["DEMO_SEED_PASSWORD"])
+            cross_teacher = acceptance.login(*cross_teacher_credentials(run.env))
             cross_response = acceptance._request(
                 "PUT", f"/api/assignments/{malicious_assignment}/submissions/{submission_id}/review",
                 cross_teacher, json.dumps({"score": 100, "comment": "cross-class denied"}).encode())
@@ -157,10 +176,7 @@ def main(argv: list[str] | None = None) -> int:
             cross_audit = run.api(
                 "GET", f"/api/audit/events?userId={cross_user['id']}&from={today}&to={today}&limit=50",
                 cross_teacher)
-            cross_denial = any(row.get("action") == "GRADE_REVIEW"
-                               and row.get("status") == "DENIED"
-                               and row.get("objectId") in (submission_id, malicious_assignment)
-                               for row in cross_audit)
+            cross_denial = has_review_denial(cross_audit, "ASSIGNMENT", malicious_assignment, 404)
         except Exception:  # noqa: BLE001 - 未准备 B 班教师时明确记录未执行
             cross_status = None
 
@@ -171,8 +187,7 @@ def main(argv: list[str] | None = None) -> int:
         audit_rows = run.api(
             "GET", f"/api/audit/events?userId={student['id']}&from={today}&to={today}&limit=50",
             run.teacher)
-        denial = next((row for row in audit_rows if row.get("action") == "GRADE_REVIEW"
-                       and row.get("status") == "DENIED"), None)
+        denial = has_review_denial(audit_rows, "SUBMISSION", submission_id, 403)
         step4 = {
             "gradeTools": grade_tools,
             "studentReviewStatus": student_review.get("status") if isinstance(student_review, dict) else 403,
@@ -180,7 +195,7 @@ def main(argv: list[str] | None = None) -> int:
             "reviewsUnchanged": reviews_before == reviews_after,
             "resultsUnchanged": results_before == results_after,
             "tasksUnchanged": tasks_before == tasks_after,
-            "denialAudit": denial is not None,
+            "denialAudit": denial,
             "crossDenialAudit": cross_denial,
         }
         # run.api returns the parsed body, not the status; the call above raises on non-403.
@@ -189,7 +204,7 @@ def main(argv: list[str] | None = None) -> int:
         result["step4Passed"] = (
             not grade_tools
             and step4["studentReviewStatus"] == 403
-            and step4["crossClassStatus"] in (403, 404)
+            and step4["crossClassStatus"] == 404
             and step4["reviewsUnchanged"]
             and step4["resultsUnchanged"]
             and step4["tasksUnchanged"]

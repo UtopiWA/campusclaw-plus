@@ -1,6 +1,6 @@
 # CampusClaw 接口回归测试
 
-该目录提供材料、配置、会话与 MCP 的 Python 接口回归测试。用例按 URL/方法组织；`run_all.py` 负责共享登录状态、测试数据和报告。已实现的异步作业批改使用仓库根目录 `scripts/lesson08_acceptance.py` 单独验收；诊断和学习计划尚在规划中。
+该目录提供材料、配置、会话与 MCP 的 Python 接口回归测试。用例按 URL/方法组织；`run_all.py` 负责共享登录状态、测试数据和报告。异步作业批改使用 `scripts/lesson08_acceptance.py` 单独验收；学习诊断与计划的验收范围见[模块说明](../docs/learning/README.md)。
 
 ## 前置条件
 
@@ -20,7 +20,7 @@
 
 3. 确认 A 班至少有一份 `READY` 材料和知识切片。接口套件会读取该材料，但不会删除或修改它。
 
-   跨班 MCP 检查另需 B 班教师 `teacher-b`，密码与 `APITEST_TEACHER_PASSWORD`（或其演示密码回退值）一致。默认演示种子只创建 `teacher-a/student-a1/student-b1`，不会创建该教师；请在专用测试环境准备，套件不会自动创建或修改账号。A 班还需一个已启用智能体，用例会临时更新并恢复它。
+   跨班 MCP 检查另需其他班级的教师，默认使用 `teacher-b`，密码回退到 A 班教师测试密码。已有账号密码不同时，用下表两个变量单独指定，SEC-08 脚本也读取它们。默认种子不会创建该教师；请在专用测试环境准备，套件不会自动创建或修改账号。A 班还需一个已启用智能体，用例会临时更新并恢复其配置和绑定，更新时间会变化。
 
 4. `.env.team` 至少提供 `DEMO_SEED_PASSWORD`、`MYSQL_USER`、`MYSQL_PASSWORD`、`MYSQL_DATABASE` 和与 Compose 中 `mcp-demo` 一致的 `MCP_AUTH_TOKEN`。可选配置如下：
 
@@ -32,6 +32,8 @@
    | `APITEST_STUDENT_USERNAME` | `student-a1` | 学生测试账号 |
    | `APITEST_TEACHER_PASSWORD` | 回退到 `DEMO_SEED_PASSWORD` | 教师密码 |
    | `APITEST_STUDENT_PASSWORD` | 回退到 `DEMO_SEED_PASSWORD` | 学生密码 |
+   | `APITEST_OTHER_TEACHER_USERNAME` | `teacher-b` | 跨班教师账号 |
+   | `APITEST_OTHER_TEACHER_PASSWORD` | 回退到教师测试密码 | 跨班教师密码；单独参与报告脱敏 |
    | `APITEST_DB_HOST` | `127.0.0.1` | MySQL 主机 |
    | `APITEST_MCP_BASE_URL` | `http://mcp-demo:8090` | 后端容器可访问的 MCP 内部根地址；可带末尾 `/mcp` |
    | `APITEST_HTTP_TIMEOUT` | `20` | 普通请求超时秒数 |

@@ -151,10 +151,11 @@ def run(context) -> None:
     student_tools = context.http.request("GET", f"/api/mcp/servers/{server_id}/tools", token=student["token"])
     require_equal(student_tools.status, 403, "学生不得查看 MCP 工具缓存")
 
-    # 使用演示数据中的 B 班教师验证已知 ID 与不存在 ID 对外完全同形。
+    # 使用独立配置的其他班教师，验证已知 ID 与不存在 ID 对外完全同形。
     cross_login = context.http.request(
         "POST", "/api/auth/login",
-        json_body={"username": "teacher-b", "password": context.config.teacher_password},
+        json_body={"username": context.config.other_teacher_username,
+                   "password": context.config.other_teacher_password or context.config.teacher_password},
     )
     require_equal(cross_login.status, 200, "B 班教师登录应成功")
     cross_payload = require_mapping(cross_login.json(), "B 班教师登录响应应为对象")

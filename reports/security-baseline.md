@@ -69,3 +69,7 @@ python scripts/check_security.py --env-file .env.team
 密钥阶段 exit 0，依赖阶段 `complete=true`、exit 0。最终门禁 run `20261114T123734Z-41820` 的 scan 阶段同样 exit 0。首次基线曾因 `JAVA_HOME` 指向 Java 8 使依赖阶段 exit 2，该未完成记录保留；门禁在 Corretto 17 环境重跑后完成。工具版本、计数和退出码以 `backend/target/security-check/summary.json` 和 `backend/target/scan-logs/` 为准。
 
 处置：未发现需要保留的密钥候选，也未添加白名单或降低规则；没有用临时泄露制造扫描结果。
+
+## 本机独立复核（2026-11-14）
+
+2026-11-14独立复核时门禁因演示口令与公开字符串重合退出1，该历史记录保留。2026-11-15已授权轮换五个账号口令，完整门禁五阶段全0；教师参考配置现象不认定为漏洞。2026-11-16已获成员确认并同步归档，最新结果和流程偏差见[review-04](review-04.md)。

@@ -4,7 +4,7 @@
 
 动机及范围见 [proposal](proposal.md)。升级前基线使用 Boot 3.5.16，覆盖 Tomcat 10.1.59、Jackson 2.21.7、Netty 4.1.137.Final、amqp-client 5.34.0；springdoc 为 2.10.0，测试使用 `@MockBean` / `@SpyBean`。JSON 不仅用于 HTTP，还用于模型严格解析、Qdrant/MCP、评分依据快照和日志，因此不能只改 parent 后以编译成功验收。当前实际版本和验证见下方实施核对及 lesson-08 第 8 节。
 
-Class08 的数据一致性修正已包含在输入提交 `d5167f3`，change 尚未归档。升级需保留作业行锁、attempt 隔离、publisher return 检查、worker 初始化边界和页面请求取消等现有行为，不以旧 HEAD 覆盖修正。验收继续写入 [lesson-08](../../../docs/lesson-08/README.md)，新增“依赖升级”小节区分升级前后的实际结果。
+Class08 的数据一致性修正已包含在输入提交 `d5167f3`，change 尚未归档。升级需保留作业行锁、attempt 隔离、publisher return 检查、worker 初始化边界和页面请求取消等现有行为，不以旧 HEAD 覆盖修正。验收继续写入 [lesson-08](../../../../docs/lesson-08/README.md)，新增“依赖升级”小节区分升级前后的实际结果。
 
 ## Goals / Non-Goals
 
@@ -16,7 +16,7 @@ Class08 的数据一致性修正已包含在输入提交 `d5167f3`，change 尚�
 
 ### 1. 使用 Boot 4.0.9 平台组合，逐项审计覆盖版本
 
-规划目标为 Boot 4.0.9 / Framework 7.0.10，而非把 Spring 7 强塞进 Boot 3。Java 17 保留，内嵌容器按平台迁至 Tomcat 11 / Servlet 6.1。系统要求与版本依据：[官方系统要求](https://docs.spring.io/spring-boot/4.0/system-requirements.html)、[BOM 坐标](https://docs.spring.io/spring-boot/4.0/appendix/dependency-versions/coordinates.html)。Spring 两项告警的公开修复为 7.0.9，详情见 [review 7.5](../../../docs/lesson-08/review.md#75-依赖遗留与成员决定暂不接受风险)。
+规划目标为 Boot 4.0.9 / Framework 7.0.10，而非把 Spring 7 强塞进 Boot 3。Java 17 保留，内嵌容器按平台迁至 Tomcat 11 / Servlet 6.1。系统要求与版本依据：[官方系统要求](https://docs.spring.io/spring-boot/4.0/system-requirements.html)、[BOM 坐标](https://docs.spring.io/spring-boot/4.0/appendix/dependency-versions/coordinates.html)。Spring 两项告警的公开修复为 7.0.9，详情见 [review 7.5](../../../../docs/lesson-08/review.md#75-依赖遗留与成员决定暂不接受风险)。
 
 对照 effective POM / dependency tree 核对实际版本，移除 Boot 3 的 Tomcat/Jackson/Netty 覆盖并复扫。4.0.9 BOM 仍列 amqp-client 5.27.1，Rabbit 客户端固定使用已发布的 **5.37.0**，实际验证确认/返回/ACK 兼容；告警修复界限标为 5.36.1，但该版本未在 Central 发布，不能直接作为依赖版本。commons-lang3 3.19.0 和 log4j-api 2.25.5 已由平台管理且处于修复范围，不额外覆盖。不能只改版本或屏蔽扫描便声称已修复。
 

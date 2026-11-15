@@ -12,7 +12,7 @@ import time
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
-CONTAINERS = ("CampusClawIntegrationTest", "QdrantIntegrationTest", "McpSchemaMigrationTest")
+CONTAINERS = ("CampusClawIntegrationTest", "QdrantIntegrationTest", "McpSchemaMigrationTest", "SecurityAuditSchemaMigrationTest")
 
 
 class EnvironmentFailure(Exception):
