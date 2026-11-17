@@ -113,6 +113,7 @@
 - 既有累计评审：`review-01`～`review-04`；其中 `review-02`/`review-03` 为 AI/脚本来源，满足“至少三份、至少两份 AI/脚本”的数量要求，但不能替代本轮人工交叉评审。
 - 高风险三查：`reports/risk-concurrency.md`、`risk-transaction.md`、`risk-authz.md`；本轮缓存/压测的并发与清理边界补记在 review-05。
 - 固定证据：`reports/gate-red-green.md`、`boot-reproduce.md`、`pipeline.md`、`observe-alert.md`、`bench.md`、`feedback.md`、`review-05.md`；原始输出在忽略目录。
+- 收尾交接：[handoff.md](handoff.md)（剩余工作、命令、例外和检查清单）。
 
 ## 10. 状态清单
 
