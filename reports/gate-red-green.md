@@ -1,6 +1,6 @@
 # Class09 安全门禁红绿证据
 
-日期：2026-11-14  
+日期：2026-11-14
 门禁入口：
 
 ```powershell
@@ -80,6 +80,32 @@ python scripts/security_gate.py --env-file .env.team
 
 2026-11-14独立复核时门禁因演示口令与公开字符串重合退出1，该历史记录保留。2026-11-15已授权轮换五个账号口令，完整门禁五阶段全0；教师参考配置现象不认定为漏洞。2026-11-16已获成员确认并同步归档，最新结果和流程偏差见[review-04](review-04.md)。
 
+## Class10 功能门禁受控红绿（2026-11-18）
+
+日期：2026-11-18（本地）；候选工作区：`master` @ `b30ab9d` 加 Class10 未提交修改。
+入口：`python scripts/check.py --mode unit`（`make check` 的单元层；本机无 GNU make，使用 Python 等价入口）。
+
+### 红：受控改坏测试期望
+
+- 改动位置：`backend/src/test/java/com/campusclaw/grading/GradingTaskCompletionServiceTest.java:48`，把迟到完成后的期望从 `SUCCEEDED` 改为 `FAILED`，用于验证门禁确实能拦截错误实现。
+- 命令：`python scripts/check.py --mode unit`
+- 实际：`spec PASS`、`frontend-test PASS`、`frontend-build PASS`、`backend-unit FAIL`；失败用例
+  `GradingTaskCompletionServiceTest.terminalResultCannotBeReplacedByLateCompletion:48 expected: <FAILED> but was: <SUCCEEDED>`；后端计数 `256 tests, 1 failure`；总退出码 **1**。
+- 原始输出：`backend/target/class10-red/red-run.txt`、`backend/target/class10-red/backend-unit-red.log`。
+- 未使用真实密钥、未降低阈值；改动只在工作区，未合入主干。
+
+### 绿：恢复期望后复测
+
+- 恢复：从 `backend/target/class10-red/GradingTaskCompletionServiceTest.java.bak` 还原同一文件；`grep` 确认两个终态断言回到 `SUCCEEDED`。
+- 命令：`python scripts/check.py --mode unit`
+- 实际：`spec`、`frontend-test`（23 文件/158 测试）、`frontend-build`、`backend-unit`（256 测试，0 failures/errors/skipped）、`mcp-unit`（8 测试）、`runner-unit`（47 测试）全部 PASS；总退出码 **0**。
+- 原始输出：`backend/target/class10-red/green-run.txt`、`backend/target/class10-red/backend-unit-green.log`。
+- 同一轮另跑 `--mode integration`（44 测试）和 `--mode api`（通过），见 Class10 记录。
+
+### 安全门禁
+
+Class09 的受控红绿继续有效。本轮安全门禁实际运行结果记录在 `docs/lesson-10/README.md` 和 `backend/target/class10-security-gate.log`；未完成或环境缺失按真实退出码记录，不补写通过。
+
 ## 本机实际口令整改后复跑（2026-11-15）
 
 此前run `20261114T142446Z-46328`因配置口令匹配退出1，未改写。轮换五个账号及私有配置后执行 `python scripts/security_gate.py --env-file .env.team`，run `20261115T152822Z-5904`：scan/access/audit/api/unit全0，总exit 0，清理完成。没有调整阈值或忽略失败；此前实现者的受控故障红绿证据另行保留，本轮没有重新制造合成故障。
@@ -94,3 +120,15 @@ python scripts/security_gate.py --env-file .env.team
 | 移除故障后绿 | `python scripts/security_gate.py --env-file .env.team` | 0/0/0/0/0 | 0 | `20261115T160417Z-7996` |
 
 红阶段使用门禁已有的故障参数：底层脚本测试实际通过，聚合器将指定阶段标记为合成失败，`syntheticFault=true`；不是业务代码回归或真实密钥泄露。第二次仅移除该参数，`syntheticFault=false`，完整门禁退出0。两轮合成业务资源按脚本清理，配置未变；审计保护的断开测试服务和追加事件按既有规则保留。
+
+## Class10 安全门禁实际结果（2026-11-18）
+
+- 命令：`python scripts/security_gate.py --env-file .env.team`
+- summary：`backend/target/security-gate/20261117T174859Z-62904/summary.json`
+- 阶段：scan **2**、access 0、audit 0、api 1、unit 0；总退出 **2**。
+- scan：secrets 阶段 0 命中（32 提交、603 公开文件、前端 dist、七服务日志），但 dependencies 阶段 `npm audit --audit-level=high` 报 5 个 high，全部来自开发工具链 `picomatch <= 4.0.7`（GHSA-fc5q-39xc-vjpf）及 `fdir/tinyglobby/vite/vitest` 传播；当前无可用非破坏性修复。`scan.py` 在此停止；Python/Java 范围随后单独执行并通过（Ruff、pip-audit、Checkstyle、SpotBugs、OSV 124/124），但不能替代聚合 scan 通过。
+- api：首次失败为模型/数据波动（流式正文与落库正文在引用标记外不一致），同条件单跑 `check.py --mode api` 退出 0；失败日志保留。
+- 无例外时结论：**未达到高危 0**。未降低 audit 级别、未排除 dev 依赖、未跳过扫描；该轮门禁保持红，等待上游修复或经用户确认的处置。
+- 用户于 2026-11-18 确认接受开发依赖例外；新增 `security-exceptions.json`，必须显式 `--exceptions`，覆盖 `GHSA-fc5q-39xc-vjpf` 的 5 个传播包，到期 2026-12-18。例外不会把告警写成 0：原始 JSON/失败码保留，日志标记 `ACCEPTED_EXCEPTION`；新公告/过期/未批准仍失败。
+- 例外条件下复跑：`python scripts/security_gate.py --env-file .env.team --exceptions security-exceptions.json`，run `20261117T181025Z-73908`：scan/access/audit/api/unit 均为 **0**，总退出 **0**；summary 记录例外文件。原始 5 high 仍在 `backend/target/scan-logs/frontend-audit.json`。
+- **这是有期限例外，不是漏洞修复；字面“高危 0”未达到。**

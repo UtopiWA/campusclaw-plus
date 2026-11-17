@@ -4,7 +4,7 @@
 
 ## 1. 构建、环境和配置
 
-后端 Maven/JDK 17、前端 Node 22 构建及锁文件、Python MCP Dockerfile 和 Compose 一同维护；使用仓库 wrapper 与锁文件，不用成员本机全局版本作为唯一前提。镜像/交付记录关联候选提交；发布只改部署配置，不在容器内手改源码。既有基础镜像按版本标签固定、未全部锁 digest，这是继承边界，不能宣称位级可重现；如需升级或锁定，单独评审。
+后端 Maven/JDK 17、前端 Node 22 构建及锁文件、Python MCP Dockerfile 和 Compose 一同维护；使用仓库 wrapper 与锁文件，不用成员本机全局版本作为唯一前提。镜像/交付记录关联候选提交；发布只改部署配置，不在容器内手改源码。Class10 起三个 Dockerfile 接收 `GIT_COMMIT` 并写入 OCI `revision` 标签，Compose 用 `IMAGE_TAG` 绑定运行构建，`APP_VERSION` 默认取该标签；工作区有未提交修改时使用 `-dirty` 标签并在证据中说明。既有基础镜像按版本标签固定、未全部锁 digest，这是继承边界，不能宣称位级可重现；如需升级或锁定，单独评审。
 
 本地、测试和公开演示分别使用私有 `.env`、独立数据库/卷及凭据；真实模型验收说明环境类别，不公开供应商密钥或本机地址。当前不实现生产级高可用、蓝绿发布或多租户。
 
@@ -15,7 +15,7 @@
 | 数据库 | `MYSQL_ROOT_PASSWORD/MYSQL_PASSWORD` 为私有非空值；Compose 的库名/用户默认 `campusclaw`，`MYSQL_HOST_PORT` 默认 13306；后端独立运行用 `DB_URL/DB_USERNAME/DB_PASSWORD` |
 | 部署隔离 | 默认项目 `campusclaw-plus`，APP_PORT 18080、RabbitMQ 管理 15673；私有 `.env.team`，接口检查用 `APITEST_ENV_FILE` 选择同一配置，不复用个人项目卷 |
 | 认证/种子 | `AUTH_JWT_SECRET` 至少 32 UTF-8 字节，`AUTH_JWT_TTL` 默认 PT8H；`DEMO_SEED_ENABLED` 默认 false，仅开启时要求 `DEMO_SEED_PASSWORD` |
-| 模型 | `EMBEDDING_BASE_URL/API_KEY/MODEL/DIMENSION` 与 `CHAT_BASE_URL/API_KEY/MODEL` 必须按实际服务填写；维度匹配 Cosine collection；`CHAT_REASONING_EFFORT` 默认 none，显式空值用于省略该供应商扩展字段 |
+| 模型 | `EMBEDDING_BASE_URL/API_KEY/MODEL/DIMENSION` 与 `CHAT_BASE_URL/API_KEY/MODEL` 必须按实际服务填写；维度匹配 Cosine collection；`CHAT_REASONING_EFFORT` 默认 none，显式空值用于省略该供应商扩展字段；`EMBEDDING_CACHE_SIZE` 默认 256，0 关闭查询向量 LRU，仅用于同口径对比复测 |
 | MCP | `MCP_AUTH_TOKEN` 与登记服务的 Token 一致；`MCP_TOKEN_ENCRYPTION_KEY` 是独立 32 随机字节的 Base64；白名单默认 mcp-demo；连接/读取默认 3s/10s |
 | 材料/检索 | `MAX_UPLOAD_BYTES` 默认 2097152；连接/读取 3s/30s；宽召回/双路/强向量为 0.35/0.45/0.55，必须有序，RRF K=60 |
 | 基线版本 | `APP_VERSION` 可覆盖 Maven build-info 的项目版本，匹配 `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`；显式空值/非法值拒绝，不读取本机 Git 路径或远端作为运行依赖 |
@@ -56,7 +56,7 @@ health 不运行 Chat/Embedding 生成、不调 MCP 工具、不列教师配置�
 
 材料执行器现为核心 2/最大 4 线程、队列 50；SSE 为核心 4/最大 16、队列 50。保留满载拒绝/恢复契约，不能把队列改成无界来隐藏容量问题。当前没有通用按用户限流或熔断，后续高成本接口须在 change 写并发、频率、模型配额与超额响应，不能声称现状已具备。
 
-最小观察口径为请求量、错误率、耗时和依赖连通：对应请求完成事件计数、按已约定 HTTP/事件状态分类、`durationMs` 分布及 health 固定依赖状态。本轮定义日志字段和人工核验，不额外接指标/告警平台；未来告警必须同时写阈值、责任人和处置动作，不能只写“需要监控”。
+最小观察口径为请求量、错误率、耗时和依赖连通：对应请求完成事件计数、按已约定 HTTP/事件状态分类、`durationMs` 分布及 health 固定依赖状态。Class10 增加 `scripts/observe.py` 从既有消息、JSON 日志和 RabbitMQ 管理 API 派生三技能调用量、错误率、API P95 和队列深度，并用 `scripts/alert_receiver.py` 验证本地 HTTP 送达；这是轻量派生工具，**不是** Prometheus/Grafana/Alertmanager 平台，也不新增应用指标接口。告警必须同时写阈值、责任人和处置动作；未实际送达不得记为通过。
 
 **停机例外 OPS-E01：** 当前应用未显式配置完整优雅停机，两类有界执行器不等待全部任务完成。材料依赖持久化状态及重启恢复，SSE 中断按既有失败/重试处理；本轮不宣称在途请求绝不中断。变更停机行为需另写场景和时限；公开长期部署前应完成例如 30s 排空预算、就绪摘流及超时后的处理设计。此次回滚在隔离环境停写/停止请求后进行，不用强杀真实应用演示“成功”。
 
@@ -64,7 +64,7 @@ health 不运行 Chat/Embedding 生成、不调 MCP 工具、不列教师配置�
 
 ## 4. 发布、回滚和数据变更（按需执行）
 
-发布前确认另一成员审核通过、必要检查通过，涉及数据变更时明确备份与恢复方案。以下回滚步骤是按需操作指南，不是本轮归档的额外验收门槛。首个团队基线的上版可选已验收个人继承提交；候选与旧版均须能从各自代码构建，记录精确提交/标签。禁止使用浮动“最新版”充当回滚目标。
+发布前确认另一成员审核通过、必要检查通过，涉及数据变更时明确备份与恢复方案。以下回滚步骤是按需操作指南，不是本轮归档的额外验收门槛。首个团队基线的上版可选已验收个人继承提交；候选与旧版均须能从各自代码构建，记录精确提交/标签。禁止使用浮动“最新版”充当回滚目标。Class10 的 `.github/workflows/ci.yml` 与 `security-gate.yml` 是检查/构建配置，不代表已经推送运行；真实运行编号和镜像摘要须由获授权成员记录。`security-exceptions.json` 只接受显式传入、已批准且未过期的开发依赖例外，并保留原始告警；它不把例外计为零告警，到期前必须复查。
 
 在**专用测试主机或已确认无端口冲突的隔离环境**演练；实际应用不得被此流程停止。两份工作副本使用同一专用 Compose 项目名与演练卷，顺序启动以验证旧版可读新版本产生的数据；候选/旧版私有配置分别核对。若端口被真实服务占用，先准备经评审的测试端口覆盖，不能直接照下面命令运行。
 

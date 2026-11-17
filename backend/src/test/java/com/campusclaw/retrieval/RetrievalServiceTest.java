@@ -207,7 +207,7 @@ class RetrievalServiceTest {
     private AppProperties properties() {
         return new AppProperties("./uploads", 1024, new AppProperties.DemoSeed(false, ""),
                 new AppProperties.Qdrant("http://localhost", "test"),
-                new AppProperties.Embedding("http://localhost/v1", "key", "embed", 3),
+                new AppProperties.Embedding("http://localhost/v1", "key", "embed", 3, 256),
                 new AppProperties.Chat("http://localhost/v1", "key", "chat", "none"),
                 new AppProperties.Retrieval(Duration.ofSeconds(1), Duration.ofSeconds(2),
                         1000, 10, 20, 0.35, 0.55, 0.45, 60, false));

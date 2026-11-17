@@ -23,6 +23,11 @@ class SecurityGateTest(unittest.TestCase):
         names = [name for name, _, _ in security_gate.stage_commands(Path(".env.team"))]
         self.assertEqual(names, ["scan", "access", "audit", "api", "unit"])
 
+    def test_stage_commands_pass_explicit_exception_file(self):
+        commands = security_gate.stage_commands(Path(".env.team"), Path("security-exceptions.json"))
+        self.assertIn("--exceptions", commands[0][1])
+        self.assertIn("security-exceptions.json", commands[0][1])
+
     def test_unknown_fault_stage_is_rejected_by_cli_choices(self):
         with self.assertRaises(SystemExit):
             security_gate.main(["--fault-stage", "not-a-stage"])

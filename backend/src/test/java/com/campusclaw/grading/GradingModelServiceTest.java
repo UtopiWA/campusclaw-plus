@@ -89,6 +89,23 @@ class GradingModelServiceTest {
     }
 
     @Test
+    void explanationPromptRequiresEvidenceAndImprovementWithoutFixedWeights() {
+        ChatGateway chat = mock(ChatGateway.class);
+        when(chat.complete(anyList())).thenAnswer(invocation -> {
+            List<ChatGateway.ChatMessage> messages = invocation.getArgument(0);
+            String system = messages.get(0).content();
+            assertTrue(system.contains("指出作答中的具体依据"));
+            assertTrue(system.contains("错误或缺漏及改进建议"));
+            assertTrue(system.contains("不是必须逐条套用的评分表"));
+            assertTrue(system.contains("不得只写空泛结论"));
+            assertFalse(system.contains("必须给满分"));
+            assertTrue(messages.get(1).content().contains("<<<REFERENCE"));
+            return "{\"score\":87,\"rationale\":\"公式使用正确，但未说明适用条件，建议补充。\"}";
+        });
+        assertEquals(87, service(chat).grade(assignment(), submission()).score());
+    }
+
+    @Test
     void rejectsMissingReferenceAndDoesNotCallModel() {
         ChatGateway chat = mock(ChatGateway.class);
         Assignment invalid = new Assignment(1L, "Title", "Question", "[]", 100, 1L);
@@ -145,7 +162,7 @@ class GradingModelServiceTest {
                 "uploads", 1000,
                 new AppProperties.DemoSeed(false, ""),
                 new AppProperties.Qdrant("http://localhost:6333", "chunks"),
-                new AppProperties.Embedding("http://localhost", "key", "embedding", 1),
+                new AppProperties.Embedding("http://localhost", "key", "embedding", 1, 256),
                 new AppProperties.Chat("http://localhost", "key", "course-chat", "none"),
                 new AppProperties.Retrieval(Duration.ofSeconds(1), Duration.ofSeconds(1),
                         1000, 10, 20, 0.35, 0.55, 0.45, 60, false));

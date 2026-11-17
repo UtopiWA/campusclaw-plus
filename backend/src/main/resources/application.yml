@@ -73,6 +73,7 @@ app:
     api-key: ${EMBEDDING_API_KEY}
     model: ${EMBEDDING_MODEL}
     dimension: ${EMBEDDING_DIMENSION}
+    cache-size: ${EMBEDDING_CACHE_SIZE:256}
   chat:
     base-url: ${CHAT_BASE_URL}
     api-key: ${CHAT_API_KEY}

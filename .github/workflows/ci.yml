@@ -1,0 +1,115 @@
+name: ci
+
+# 推送/PR 触发的功能门禁与镜像构建。完整安全门禁需要私有配置和模型环境，
+# 由 security-gate.yml 在团队自托管运行器上执行；两者都是合入必需检查。
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  OPENSPEC_VERSION: 1.13.1
+
+jobs:
+  functional-gate:
+    name: functional gate (unit + integration)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install OpenSpec CLI
+        run: npm install --global @fission-ai/openspec@${{ env.OPENSPEC_VERSION }}
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Unit gate
+        run: python scripts/check.py --mode unit
+
+      # GitHub 托管运行器提供 Docker；Testcontainers 只创建本轮独立容器。
+      - name: Integration gate
+        env:
+          TESTCONTAINERS_API_VERSION: "1.44"
+        run: python scripts/check.py --mode integration
+
+      - name: Upload gate logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: functional-gate-${{ github.run_id }}
+          path: |
+            backend/target/check-logs/
+            backend/target/surefire-reports/
+          if-no-files-found: warn
+          retention-days: 14
+
+  image-build:
+    name: image build and provenance
+    needs: functional-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build images with commit label
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_SHA::7}"
+          for service in backend frontend mcp-server; do
+            docker build \
+              --build-arg GIT_COMMIT="${GITHUB_SHA}" \
+              -t "campusclaw-plus-${service}:${TAG}" \
+              "./${service}"
+          done
+
+      - name: Record image identifiers
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_SHA::7}"
+          mkdir -p reports/ci
+          {
+            echo "runId=${GITHUB_RUN_ID}"
+            echo "runNumber=${GITHUB_RUN_NUMBER}"
+            echo "commit=${GITHUB_SHA}"
+            echo "imageTag=${TAG}"
+            for service in backend frontend mcp-server; do
+              image="campusclaw-plus-${service}:${TAG}"
+              echo "${service}ImageId=$(docker image inspect --format '{{.Id}}' "${image}")"
+              echo "${service}Labels=$(docker image inspect --format '{{json .Config.Labels}}' "${image}")"
+            done
+          } > "reports/ci/image-info-${GITHUB_RUN_ID}.txt"
+          cat "reports/ci/image-info-${GITHUB_RUN_ID}.txt"
+
+      - name: Upload provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-provenance-${{ github.run_id }}
+          path: reports/ci/
+          retention-days: 30

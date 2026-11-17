@@ -27,6 +27,8 @@
 | Python MCP | `python -m unittest discover -s mcp-server/tests` | 使用测试环境，不调用真实收费模型 |
 | 规约 | `openspec validate --all --strict` | 只证明形式校验，不能代替评审 |
 | 真实接口 | `python apitest/run_all.py` | 按 [接口说明](../../apitest/README.md) 准备账号、READY 材料、依赖及数据库；报告 `apitest/reports/` |
+| Class10 压测 | `python scripts/bench.py --env-file .env.team --levels ...` | 上传本轮合成讲义、创建唯一作业；默认保留 worker 并清理；原始 JSON 在 `backend/target/bench/` |
+| Class10 观测 | `python scripts/observe.py --env-file .env.team --window 5m` | 只读既有消息/JSON 日志/RabbitMQ 管理 API；告警需显式 webhook 并实际送达 |
 
 新增/修改行为要有能区分正确实现的聚焦测试；通过后按影响面扩展检查，不为纯文档变更重跑整个应用。Node/JDK/Python 工具安装与依赖下载不是离线测试本身，不承诺空机器断网即可运行。
 
@@ -131,7 +133,7 @@ AI 生成代码必须先注明生成范围并由开发者自审，再经另一�
 | Python 规范与依赖 | `python -m ruff check mcp-server apitest scripts`、`python -m pip_audit -r apitest/requirements.txt` |
 | 数据库查询风险 | 对新增/修改查询执行 `EXPLAIN`，人工复核索引、N+1、无分页列表和锁范围 |
 
-扫描入口统一为 `python scripts/scan.py`（或经评审的等价固定入口），首次建立时对整库执行一轮。自动工具查不到的查询语义和索引风险继续人工复核；报告注明工具、范围、结果、覆盖边界和人工处置，不提交完整敏感日志。
+扫描入口统一为 `python scripts/scan.py`（或经评审的等价固定入口），首次建立时对整库执行一轮。自动工具查不到的查询语义和索引风险继续人工复核；报告注明工具、范围、结果、覆盖边界和人工处置，不提交完整敏感日志。开发依赖例外必须显式传入 `--exceptions`、有批准人和到期日，原始 high/critical 告警与失败码保留，不得把例外登记写成 0 告警。
 
 ### 6.5 合入门槛
 

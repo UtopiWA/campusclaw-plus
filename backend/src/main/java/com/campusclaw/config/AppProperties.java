@@ -9,6 +9,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.validation.annotation.Validated;
 
 /** 集中声明应用与外部检索依赖配置，避免在业务代码中读取环境变量或硬编码凭据。 */
@@ -33,7 +34,8 @@ public record AppProperties(
             @NotBlank String baseUrl,
             @NotBlank String apiKey,
             @NotBlank String model,
-            @NotNull @Min(1) Integer dimension) {
+            @NotNull @Min(1) Integer dimension,
+            @DefaultValue("256") @Min(0) @Max(4096) int cacheSize) {
     }
 
     public record Chat(

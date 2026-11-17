@@ -32,6 +32,7 @@ class GatewayClientTest {
     private final AtomicReference<String> chatAuthorization = new AtomicReference<>();
     private final AtomicReference<String> chatRequest = new AtomicReference<>();
     private final AtomicInteger providerErrorCalls = new AtomicInteger();
+    private final AtomicInteger embeddingCacheCalls = new AtomicInteger();
 
     @BeforeEach
     void startServer() throws IOException {
@@ -47,6 +48,10 @@ class GatewayClientTest {
             chatRequest.set(readBody(exchange));
             json(exchange, 200, "{\"choices\":[{\"message\":{\"content\":\"依据回答 [1]\"}}],"
                     + "\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":4,\"total_tokens\":7}}");
+        });
+        server.createContext("/cache/embeddings", exchange -> {
+            embeddingCacheCalls.incrementAndGet();
+            json(exchange, 200, "{\"data\":[{\"index\":0,\"embedding\":[0.1,0.2,0.3]}]}");
         });
         server.createContext("/provider-error/embeddings", exchange -> {
             providerErrorCalls.incrementAndGet();
@@ -144,6 +149,18 @@ class GatewayClientTest {
                 .isEqualTo("依据回答 [1]");
         assertThat(chatAuthorization.get()).isEqualTo("Bearer chat-secret");
         assertThat(chatRequest.get()).contains("\"reasoning_effort\":\"none\"", "\"stream\":false");
+    }
+
+    @Test
+    void repeatedEmbeddingTextReusesBoundedCacheWithoutChangingVectors() {
+        AppProperties properties = properties(baseUrl + "/cache", baseUrl + "/v1", Duration.ofSeconds(2));
+        var gateway = new OpenAiEmbeddingGateway(properties, new GatewayRestClientFactory(properties));
+
+        assertThat(gateway.embed(List.of("同一问题"))).containsExactly(List.of(0.1, 0.2, 0.3));
+        assertThat(gateway.embed(List.of("同一问题"))).containsExactly(List.of(0.1, 0.2, 0.3));
+        assertThat(embeddingCacheCalls).hasValue(1);
+        gateway.embed(List.of("另一问题"));
+        assertThat(embeddingCacheCalls).hasValue(2);
     }
 
     @Test
@@ -281,7 +298,7 @@ class GatewayClientTest {
     private AppProperties properties(String embeddingBaseUrl, String chatBaseUrl, Duration readTimeout) {
         return new AppProperties("./uploads", 1024, new AppProperties.DemoSeed(false, ""),
                 new AppProperties.Qdrant(baseUrl, "test"),
-                new AppProperties.Embedding(embeddingBaseUrl, "embedding-secret", "embed", 3),
+                new AppProperties.Embedding(embeddingBaseUrl, "embedding-secret", "embed", 3, 256),
                 new AppProperties.Chat(chatBaseUrl, "chat-secret", "chat", "none"),
                 new AppProperties.Retrieval(Duration.ofSeconds(1), readTimeout,
                         1000, 10, 20, 0.35, 0.55, 0.45, 60, false));

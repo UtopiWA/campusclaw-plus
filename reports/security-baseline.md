@@ -73,3 +73,30 @@ python scripts/check_security.py --env-file .env.team
 ## 本机独立复核（2026-11-14）
 
 2026-11-14独立复核时门禁因演示口令与公开字符串重合退出1，该历史记录保留。2026-11-15已授权轮换五个账号口令，完整门禁五阶段全0；教师参考配置现象不认定为漏洞。2026-11-16已获成员确认并同步归档，最新结果和流程偏差见[review-04](review-04.md)。
+
+## Class10 扫描与门禁（2026-11-18）
+
+候选：`master` @ `b30ab9d` 加 Class10 未提交修改；环境同上，Gitleaks v8.24.3，本地可达 32 个提交、603 个公开文件，七服务日志。原始摘要：`backend/target/security-check/summary.json`；完整门禁：`backend/target/security-gate/20261117T174859Z-62904/summary.json`。
+
+| 范围 | 实际结果 |
+| --- | --- |
+| 密钥：Git 历史/公开文件/前端 dist/七服务日志 | 均 0 命中，secrets exit 0 |
+| 配置精确比对 | 0 个候选 |
+| 前端依赖 `npm audit --audit-level=high` | **5 high**，全部来自开发工具链 `picomatch <= 4.0.7`（GHSA-fc5q-39xc-vjpf）及其传播 `fdir/tinyglobby/vite/vitest`；当前 registry 无修复版本，`npm audit fix` 无变化。exit 1 |
+| 前端 ESLint | 通过 |
+| Python Ruff / pip-audit | 通过 / 无已知漏洞（单独执行） |
+| Java Checkstyle / SpotBugs / OSV | 0 violations / 0 BugInstance / 124/124 查询、0 漏洞（单独执行；`scan.py` 在 npm audit 失败后未继续，不能算作聚合 scan 通过） |
+| 安全门禁（无例外旧红） | scan 2、access 0、audit 0、api 1、unit 0，总退出 2 |
+
+API 阶段首次失败为已知模型波动：流式正文与落库正文在引用标记外不一致（模型实际返回“资料中未找到相关内容”）；同条件重跑 `check.py --mode api` 退出 0。该失败保留在 `backend/target/check-logs/api.log` 和 `backend/target/security-gate/20261117T174859Z-62904/api.log`，未删除或改写。
+
+处置（用户确认例外前）：**未达到“高危 0”**。`picomatch` 告警是开发依赖、不进入生产运行镜像，但没有经用户/团队确认的例外准入，也没有可用的非破坏性修复，因此保持红项，不通过降低 `--audit-level`、`npm audit --omit=dev` 或跳过扫描来变绿。后续需等待上游修复或评审后升级/替换测试工具链。Python/Java 范围已单独执行并通过，但不能替代聚合 `scan` 阶段的红项。
+
+### 用户确认的开发依赖例外（2026-11-18）
+
+用户于 2026-11-18 明确选择接受开发依赖例外。新增 [security-exceptions.json](../security-exceptions.json)，记录公告 `GHSA-fc5q-39xc-vjpf`、受影响包 `picomatch/fdir/tinyglobby/vite/vitest`、批准人/日期、到期日 `2026-12-18` 和补偿措施。例外只在显式 `--exceptions` 时生效；`scan.py` 要求每个 high/critical 包和 `via` 公告都被覆盖，新增公告、过期或未批准都会失败。
+
+- 原始 5 high 仍保留在 `backend/target/scan-logs/frontend-audit.json` 和 `.log`；门禁输出 `ACCEPTED_EXCEPTION GHSA-fc5q-39xc-vjpf`，**不把例外写成 0 告警**。
+- 例外条件下重新执行 `scan.py --exceptions security-exceptions.json`：frontend-lint、Ruff、pip-audit、Checkstyle、SpotBugs、OSV 全部通过；`check_security.py --only dependencies --exceptions` 为 `complete=true`、exit 0。
+- 完整门禁最终运行：`20261117T181025Z-73908`，scan/access/audit/api/unit 均为 0，总退出 0；secrets 扫描 32 提交、616 公开文件、前端 dist、七服务日志均 0 命中。summary 在 `backend/target/security-gate/20261117T181025Z-73908/summary.json`，终端记录 `backend/target/class10-security-gate-final.log`。
+- 剩余事实：**“高危 0”字面目标未达到**；这是经用户确认的开发依赖例外，不是漏洞已修复。到期前必须复查，上游有修复版本时升级/替换。

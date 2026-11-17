@@ -4,12 +4,13 @@
 
 **当前可用：** 师生首页、讲义与标签检索、助手对话与 MCP、异步作业及教师终评、私人AI题库、掌握度统计和学习计划。登录默认进入 `/home`：教师查看班级掌握与作业进展，学生查看待交作业、计划进度和最近成绩；首页不调用模型。
 
-**当前状态：** 本阶段业务功能已完成并归档；Class09安全审计与门禁已完成独立复核、成员确认、规格同步及归档，当前无活动change。详见[复核结论](reports/review-04.md)。讲义和题目使用平面标签，按标签选题，不做知识图谱或难度调节；模型安排学习计划，学生主动调整。Class10～11另行推进；验收边界见[项目状态](docs/project-status.md)。
+**当前状态：** 本阶段业务功能已完成并归档；Class09安全审计与门禁已完成独立复核、成员确认、规格同步及归档。Class10测试门禁、镜像追溯、观测/压测与证据已实施，活动 change 见[Class10](openspec/changes/add-class10-test-gates-observability-and-delivery/proposal.md)；安全门禁在用户确认的有期限开发依赖例外下五阶段全 0，原始 5 个 high 告警保留且字面“高危 0”未达到，真实 CI、干净环境启动、手机/真实用户和成员交叉评审尚未完成。详见[Class10 记录](docs/lesson-10/README.md)与[项目状态](docs/project-status.md)。讲义和题目使用平面标签，按标签选题，不做知识图谱或难度调节；模型安排学习计划，学生主动调整。
 
 ## 文档
 
 - [项目范围与成员分工](docs/project-scope.md)：当前业务边界、模块分工与后续交付。
-- [项目状态](docs/project-status.md)：当前实现与待办；验收记录：[Class07](docs/lesson-07/README.md)、[Class08](docs/lesson-08/README.md)、[Class09](docs/lesson-09/README.md)；[Class08 评审](docs/lesson-08/review.md)。
+- [项目状态](docs/project-status.md)：当前实现与待办；验收记录：[Class07](docs/lesson-07/README.md)、[Class08](docs/lesson-08/README.md)、[Class09](docs/lesson-09/README.md)、[Class10](docs/lesson-10/README.md)；[Class08 评审](docs/lesson-08/review.md)。
+- [报告草稿](report.md)：当前结论与证据入口；正式第 11 课报告另行整理。
 - [师生首页](docs/home/README.md)：图表、统计口径和验收步骤。
 - [项目规则](AGENTS.md) 与 [主规格](openspec/specs/)：开发约束和已实现行为契约。
 - 工程规范：[产品](docs/standards/01-product.md)、[后端](docs/standards/02-backend.md)、[安全](docs/standards/03-security.md)、[测试与评审](docs/standards/04-testing.md)、[运维](docs/standards/05-operations.md)。
@@ -17,6 +18,7 @@
 - [学习诊断与辅导](docs/learning/README.md)：讲义标签、作业与私人题库、学习计划、掌握度统计和验收步骤。
 - [Class08 安全自查](reports/security-precheck.md)：授权、并发/事务、密钥与依赖结果；[独立 Docker 复核](reports/review-01.md)已完成并归档。
 - [Class09 记录](docs/lesson-09/README.md)：审计补齐、三条输入安全反例、SEC-08 和安全门禁；[修复台账](reports/security-fix-log.md)、[审计回查](reports/audit-recheck.md)、[门禁红绿](reports/gate-red-green.md)。
+- [Class10 记录](docs/lesson-10/README.md)：测试收口、双门禁红绿、镜像追溯、CI、观测/告警和压测；证据包括[启动](reports/boot-reproduce.md)、[流水线](reports/pipeline.md)、[观测告警](reports/observe-alert.md)、[压测](reports/bench.md)、[反馈缺口](reports/feedback.md)、[AI 自审](reports/review-05.md)。
 
 ## 技术栈
 
@@ -106,10 +108,25 @@ Class09 安全门禁为：
 ```powershell
 make check-security
 # Windows 无 GNU make 时使用等价入口：
+python scripts/security_gate.py --env-file .env.team --exceptions security-exceptions.json
+# 没有已批准例外需要传入时，脚本仍可直接运行：
 python scripts/security_gate.py --env-file .env.team
 ```
 
 门禁依次执行密钥/依赖扫描、SEC-01～04 访问检查、SEC-07 审计检查、常驻安全反例和脚本测试，任一步骤失败或未完成即非零退出；退出码 0 通过、1 检查失败、2 环境/范围未完成。受控红绿证据使用 `--fault-stage <stage>` 的合成故障，不使用真实密钥；每次摘要写入 `backend/target/security-gate/`。`make check` 等价于 `python scripts/check.py --mode all`。审计查询 `GET /api/audit/events` 仅教师本班可用，支持技能、操作人和时间窗过滤。
+
+`security-exceptions.json` 是经用户 2026-11-18 确认的开发依赖例外，只覆盖 `GHSA-fc5q-39xc-vjpf`（`picomatch <= 4.0.7` 及 `fdir/tinyglobby/vite/vitest` 传播），到期 2026-12-18。例外必须显式传入，原始 5 个 high 仍保留在扫描日志并标记 `ACCEPTED_EXCEPTION`；新增公告、过期或未批准会使门禁失败。门禁 run `20261117T181025Z-73908` 五阶段全 0；高危 0 的字面目标未达到，这是有期限的例外而非修复。
+
+Class10 的压测、观测和镜像入口：
+
+```powershell
+make bench          # python scripts/bench.py --env-file .env.team
+make observe        # python scripts/observe.py --env-file .env.team
+make build-images   # GIT_COMMIT/IMAGE_TAG 传入三个镜像
+make pipeline       # 功能门禁 -> 安全门禁 -> 镜像构建（本机等价流水线）
+```
+
+`scripts/bench.py` 默认保留 worker 并在本轮任务终态后清理；队列初始非空时拒绝混跑。`scripts/observe.py` 从既有消息、JSON 日志和 RabbitMQ 管理 API 生成三技能面板；告警需要显式 `--alert-webhook` 并实际送达。查询向量缓存由可选 `EMBEDDING_CACHE_SIZE` 控制（默认 256，0 关闭），不改变检索结果和授权。GitHub Actions 配置见 `.github/workflows/ci.yml` 和 `security-gate.yml`；实际推送运行尚未执行。最新红/绿、未完成项与安全扫描见 [Class10 记录](docs/lesson-10/README.md)。
 
 ## 开发与安全
 

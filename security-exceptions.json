@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "approved": true,
+  "approvedBy": "用户确认（2026-11-18：选择接受开发依赖例外）",
+  "approvedAt": "2026-11-18",
+  "expiresAt": "2026-12-18",
+  "scope": "frontend development toolchain only",
+  "reason": "npm audit high findings all trace to GHSA-fc5q-39xc-vjpf (picomatch <= 4.0.7 ReDoS). Registry has no fixed picomatch release; downgrading vitest to 3.1.4 still resolves picomatch 4.0.7. The affected packages are build/test devDependencies and are not copied into the runtime frontend image (nginx + dist only). Glob patterns are repository-controlled, not user input.",
+  "compensatingControls": [
+    "The frontend runtime image copies only nginx config and built dist; node_modules and dev tooling are not shipped.",
+    "Application input does not pass user-controlled glob patterns into picomatch/vite/vitest.",
+    "Raw npm audit JSON and the nonzero audit exit code remain in backend/target/scan-logs/frontend-audit.json and frontend-audit.log.",
+    "The exception is explicit (--exceptions), must be approved and unexpired, and fails the gate if a new advisory or package is uncovered.",
+    "Re-run npm audit at least every 30 days and upgrade/replace the toolchain when a fixed picomatch version is published."
+  ],
+  "advisories": [
+    {
+      "id": "GHSA-fc5q-39xc-vjpf",
+      "url": "https://github.com/advisories/GHSA-fc5q-39xc-vjpf",
+      "title": "picomatch vulnerable to ReDoS through single-branch repeated extglobs",
+      "severities": [
+        "high",
+        "critical"
+      ],
+      "packages": [
+        "picomatch",
+        "fdir",
+        "tinyglobby",
+        "vite",
+        "vitest"
+      ]
+    }
+  ]
+}

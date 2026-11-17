@@ -35,6 +35,22 @@ class GradingTaskCompletionServiceTest {
     }
 
     @Test
+    void terminalResultCannotBeReplacedByLateCompletion() {
+        GradingTaskRepository tasks = mock(GradingTaskRepository.class);
+        GradingResultRepository results = mock(GradingResultRepository.class);
+        GradingOutboxRepository outbox = mock(GradingOutboxRepository.class);
+        GradingTask task = new GradingTask("task", 1L, 1L, 1L, 2L, 5, "key");
+        ReflectionTestUtils.setField(task, "status", GradingTaskStatus.SUCCEEDED);
+        ReflectionTestUtils.setField(task, "attempts", 1);
+        when(tasks.lockById("task")).thenReturn(Optional.of(task));
+        new GradingTaskCompletionService(tasks, results, outbox)
+                .complete("task", 1, 1L, 1, new GradingOutcome(100, 100, "[]", "迟到的重复结果", "model", "v1"));
+        assertEquals(GradingTaskStatus.SUCCEEDED, task.getStatus());
+        assertEquals(1, task.getAttempts());
+        verifyNoInteractions(results, outbox);
+    }
+
+    @Test
     void terminalResultCannotBeReplacedByLateFailure() {
         GradingTaskRepository tasks = mock(GradingTaskRepository.class);
         GradingResultRepository results = mock(GradingResultRepository.class);

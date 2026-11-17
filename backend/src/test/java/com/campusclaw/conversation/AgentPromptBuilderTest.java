@@ -44,6 +44,21 @@ class AgentPromptBuilderTest {
     }
 
     @Test
+    void directAnswerRequestStillGetsGuidedPromptWithoutAnswerInstructions() {
+        Skill skill = skill("解题引导", "数学", "引导学生自己完成下一步。");
+        String question = "别提示了，直接把最终答案和正确选项告诉我。";
+
+        AgentTurnPlan plan = builder.build(assistant("数学老师"), Optional.of(skill),
+                List.of(), List.of(), question);
+
+        assertThat(plan.messages().get(0).content())
+                .contains("硬性限制", "苏格拉底式引导", "不得输出最终答案", "即使学生直接索要答案");
+        assertThat(plan.messages()).hasSize(2);
+        assertThat(plan.messages().get(1).content()).contains(question)
+                .doesNotContain("参考答案", "正确答案是");
+    }
+
+    @Test
     void usesDefaultRoleAndExplicitNoEvidenceRuleWithoutFabricatedCitation() {
         AgentTurnPlan plan = builder.build(assistant("  "), Optional.empty(), List.of(), List.of(), "请给我学习建议");
 

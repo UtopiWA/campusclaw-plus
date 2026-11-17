@@ -142,14 +142,18 @@ def secrets(env_file: Path) -> dict:
             "exitCode": int(bool(known) or any(item["findings"] for item in scopes.values()))}
 
 
-def dependencies() -> dict:
+def dependencies(exceptions: Path | None = None) -> dict:
     started = time.time_ns()
-    result = command([sys.executable, str(ROOT / "scripts/scan.py")], log=OUTPUT / "dependencies.log")
+    command_args = [sys.executable, str(ROOT / "scripts/scan.py")]
+    if exceptions is not None:
+        command_args += ["--exceptions", str(exceptions)]
+    result = command(command_args, log=OUTPUT / "dependencies.log")
     logs = ROOT / "backend/target/scan-logs"
     required = ("frontend-lint.log", "frontend-audit.log", "python-ruff.log", "python-pip-audit.log",
                 "java-checkstyle.log", "java-spotbugs.log", "java-dependencies.log", "java-osv.json")
     complete = all((logs / name).is_file() and (logs / name).stat().st_mtime_ns >= started for name in required)
     return {"exitCode": result.returncode if complete else 2, "complete": complete,
+            "exceptions": str(exceptions) if exceptions is not None else None,
             "log": "backend/target/security-check/dependencies.log"}
 
 
@@ -157,10 +161,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, default=ROOT / ".env.team")
     parser.add_argument("--only", choices=("all", "secrets", "dependencies"), default="all")
+    parser.add_argument("--exceptions", type=Path,
+                        help="显式批准的开发依赖例外；不传则 npm audit 失败即非零")
     args = parser.parse_args(argv)
     OUTPUT.mkdir(parents=True, exist_ok=True)
     report = {"timeUtc": datetime.now(timezone.utc).isoformat(), "stages": {}}
-    for name, execute in (("secrets", lambda: secrets(args.env_file.resolve())), ("dependencies", dependencies)):
+    for name, execute in (("secrets", lambda: secrets(args.env_file.resolve())),
+                          ("dependencies", lambda: dependencies(args.exceptions))):
         if args.only not in ("all", name):
             continue
         try:
