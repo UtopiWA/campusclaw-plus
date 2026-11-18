@@ -1,16 +1,17 @@
 """Class10 压测入口：提交、任务查询、检索三个接口分别测吞吐与 P95。
 
-用法（先在团队环境确认队列为空；脚本会在 stop worker 的情况下提交）：
+用法（使用独立验收环境，确认队列为空）：
   python scripts/bench.py --env-file .env.team --levels 1,4,8,16 --requests 20
 
 设计约束：
 - 每次提交使用本轮新建的独立作业，避免把幂等重放或 409 去重当成新任务接收能力。
-- worker 在测量期间保持停止；结束后清理本轮作业/提交/任务/发件箱并恢复 worker。
+- 默认保留 worker。需要单测接收能力时可暂停 worker，测量后恢复并等待任务终态。
 - 原始结果写入 backend/target/bench/（忽略目录）；终端只打印脱敏汇总。
 """
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import json
@@ -49,9 +50,8 @@ def login(http: HttpClient, username: str, password: str) -> dict:
     return {"token": payload["accessToken"], "user": payload["user"]}
 
 
-def upload_ready_material(http: HttpClient, token: str, db: DatabaseClient,
-                          class_id: int, run_id: str, timeout: int = 90) -> int:
-    """上传本轮唯一的合成讲义并等待 READY；返回 materialId。"""
+def upload_material(http: HttpClient, token: str, run_id: str) -> int:
+    """上传本轮唯一的合成讲义，立即返回 materialId 以便清理。"""
     import uuid
 
     boundary = "campusclaw-bench-" + uuid.uuid4().hex
@@ -68,7 +68,10 @@ def upload_ready_material(http: HttpClient, token: str, db: DatabaseClient,
                             content_type=f"multipart/form-data; boundary={boundary}")
     if response.status != 201:
         raise RuntimeError(f"合成讲义上传失败：status={response.status}")
-    material_id = int(response.json()["materialId"])
+    return int(response.json()["materialId"])
+
+
+def wait_for_material(db: DatabaseClient, class_id: int, material_id: int, timeout: int = 90) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         row = db.query_one(
@@ -82,7 +85,7 @@ def upload_ready_material(http: HttpClient, token: str, db: DatabaseClient,
             (material_id, class_id),
         )
         if row and row["index_status"] == "READY" and row["stored_path"] and int(row["entries"]) > 0:
-            return material_id
+            return
         time.sleep(1)
     raise RuntimeError("合成讲义未在超时内完成索引")
 
@@ -125,21 +128,8 @@ def queue_depth(env: dict[str, str], queue: str) -> int | None:
             payload = json.loads(response.read())
     except (URLError, OSError, ValueError):
         return None
-    return int(payload.get("messages", 0))
-
-
-def purge_queue(env: dict[str, str], queue: str) -> None:
-    import base64
-    from urllib.request import Request, urlopen
-
-    host = env.get("RABBITMQ_HOST_FOR_HOST", "127.0.0.1")
-    port = env.get("RABBITMQ_MANAGEMENT_PORT", "15672")
-    url = f"http://{host}:{port}/api/queues/%2F/{quote(queue, safe='')}/contents"
-    token = base64.b64encode(f"{env.get('RABBITMQ_USER', 'guest')}:"
-                             f"{env.get('RABBITMQ_PASSWORD', 'guest')}".encode()).decode()
-    with urlopen(Request(url, method="DELETE",
-                         headers={"Authorization": f"Basic {token}"}), timeout=10):
-        return
+    depth = payload.get("messages") if isinstance(payload, dict) else None
+    return depth if type(depth) is int and depth >= 0 else None
 
 
 def compose(env_file: Path, *args: str) -> None:
@@ -147,34 +137,43 @@ def compose(env_file: Path, *args: str) -> None:
                    cwd=ROOT, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
 
 
-def run_level(http: HttpClient, token: str, method: str, path: str,
-              body: dict | None, request_count: int, concurrency: int,
-              expected: set[int]) -> dict:
-    latencies: list[float] = []
-    statuses: dict[str, int] = {}
-
-    def one(_: int) -> None:
-        started = time.perf_counter()
-        response = http.request(method, path, token=token, json_body=body)
-        latencies.append((time.perf_counter() - started) * 1000)
-        statuses[str(response.status)] = statuses.get(str(response.status), 0) + 1
-        if response.status not in expected:
-            raise RuntimeError(f"{method} {path} 返回未预期状态 {response.status}")
+def run_level(request: Callable[[int], int], inputs: Sequence[int],
+              concurrency: int, expected: set[int]) -> dict:
+    def one(value: int) -> tuple[int, int, int]:
+        started = time.perf_counter_ns()
+        status = request(value)
+        return started, time.perf_counter_ns(), status
 
     started = time.perf_counter()
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
-        list(pool.map(one, range(request_count)))
+        samples = list(pool.map(one, inputs))
     elapsed = time.perf_counter() - started
+    latencies = [(end - start) / 1_000_000 for start, end, _ in samples]
+    request_count = len(samples)
+
+    statuses: dict[str, int] = {}
+    errors = 0
+    events = []
+    for start, end, status in samples:
+        statuses[str(status)] = statuses.get(str(status), 0) + 1
+        errors += status not in expected
+        events.extend(((start, 1), (end, -1)))
+    active = peak = 0
+    for _, delta in sorted(events):
+        active += delta
+        peak = max(peak, active)
+
     return {
         "requests": request_count,
         "concurrency": concurrency,
+        "peakInFlight": peak,
         "elapsedSeconds": round(elapsed, 3),
         "qps": round(request_count / elapsed, 2) if elapsed else 0.0,
         "p50Ms": percentile(latencies, 0.50),
         "p95Ms": percentile(latencies, 0.95),
         "maxMs": round(max(latencies), 2) if latencies else 0.0,
         "statuses": statuses,
-        "errorRate": round(sum(1 for value in statuses if not value.startswith("2")) / request_count, 4),
+        "errorRate": round(errors / request_count, 4),
     }
 
 
@@ -220,8 +219,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--levels", default="1,4,8,16", help="并发档位，逗号分隔")
     parser.add_argument("--requests", type=int, default=20, help="每个档位每接口请求数")
     parser.add_argument("--queue", default="grading.tasks")
-    parser.add_argument("--purge-queue", action="store_true",
-                        help="队列初始为空时，结束后清理本轮排队消息")
     parser.add_argument("--stop-worker", action="store_true",
                         help="在隔离环境停止 worker，只测接收能力；默认保留 worker 并等待任务终态")
     parser.add_argument("--wait-timeout", type=int, default=300,
@@ -238,10 +235,16 @@ def main(argv: list[str] | None = None) -> int:
     if not levels or any(level < 1 for level in levels):
         print("levels 必须包含正整数", file=sys.stderr)
         return 2
+    if args.requests < max(levels):
+        print("每档请求数不能小于最大并发设置", file=sys.stderr)
+        return 2
 
     env_file = args.env_file.resolve()
+    if not env_file.is_file():
+        print("ENVIRONMENT: 缺少压测配置文件", file=sys.stderr)
+        return 2
     env = _read_dotenv(env_file)
-    os.environ.setdefault("APITEST_ENV_FILE", str(env_file))
+    os.environ["APITEST_ENV_FILE"] = str(env_file)
     try:
         config = TestConfig.load()
     except ValueError as exception:
@@ -259,14 +262,15 @@ def main(argv: list[str] | None = None) -> int:
 
     initial_depth = queue_depth(env, args.queue)
     result["queue"] = {"name": args.queue, "initialDepth": initial_depth}
-    if initial_depth not in (0, None) and not args.purge_queue:
-        print(f"队列 {args.queue} 初始深度为 {initial_depth}；为避免混入真实任务，先停止。",
+    if initial_depth != 0:
+        print(f"队列 {args.queue} 初始深度非零或不可读，停止压测。",
               file=sys.stderr)
         return 2
 
     assignment_ids: list[int] = []
     task_ids: list[str] = []
     worker_stopped = False
+    safe_to_clean = True
     material_id: int | None = None
     class_id: int | None = None
     teacher: dict | None = None
@@ -276,8 +280,9 @@ def main(argv: list[str] | None = None) -> int:
         class_id = int(student["user"]["classId"])
         if int(teacher["user"]["classId"]) != class_id:
             raise RuntimeError("教师与学生不在同一班级，无法进行提交压测")
-        material_id = upload_ready_material(http, teacher["token"], db, class_id, run_id)
+        material_id = upload_material(http, teacher["token"], run_id)
         result["materialId"] = material_id
+        wait_for_material(db, class_id, material_id)
         query = retrieval_seed(db, class_id, material_id)
 
         if args.stop_worker:
@@ -298,63 +303,45 @@ def main(argv: list[str] | None = None) -> int:
         submit_rows: list[dict] = []
         query_rows: list[dict] = []
         retrieval_rows: list[dict] = []
+        result["endpoints"] = {"submit": submit_rows, "taskQuery": query_rows, "retrieval": retrieval_rows}
+        safe_to_clean = False
         cursor = 0
         for level in levels:
             level_tasks: list[str] = []
             level_assignments = assignment_ids[cursor:cursor + args.requests]
             cursor += args.requests
-            start = time.perf_counter()
-            latencies: list[float] = []
-            statuses: dict[str, int] = {}
-
-            def submit_one(assignment_id: int) -> None:
-                started = time.perf_counter()
+            def submit_one(assignment_id: int) -> int:
                 response = http.request(
                     "POST", f"/api/assignments/{assignment_id}/submissions",
                     token=student["token"],
                     json_body={"content": f"合成作答 {run_id} 第 {assignment_id} 份。"})
-                latencies.append((time.perf_counter() - started) * 1000)
-                statuses[str(response.status)] = statuses.get(str(response.status), 0) + 1
                 if response.status != 202:
-                    raise RuntimeError(f"提交返回未预期状态 {response.status}")
+                    return response.status
                 task_id = response.json().get("taskId")
                 if not task_id:
                     raise RuntimeError("提交响应缺少 taskId")
                 level_tasks.append(task_id)
+                return response.status
 
-            with ThreadPoolExecutor(max_workers=level) as pool:
-                list(pool.map(submit_one, level_assignments))
-            elapsed = time.perf_counter() - start
+            submit_rows.append(run_level(submit_one, level_assignments, level, {202}))
             task_ids.extend(level_tasks)
-            submit_rows.append({
-                "concurrency": level,
-                "requests": len(level_assignments),
-                "elapsedSeconds": round(elapsed, 3),
-                "qps": round(len(level_assignments) / elapsed, 2) if elapsed else 0.0,
-                "p50Ms": percentile(latencies, 0.50),
-                "p95Ms": percentile(latencies, 0.95),
-                "maxMs": round(max(latencies), 2) if latencies else 0.0,
-                "statuses": statuses,
-            })
+            if submit_rows[-1]["statuses"] != {"202": args.requests}:
+                raise RuntimeError("提交返回未预期状态")
 
             # 查询与检索使用同一档位、同一请求数；任务 ID 来自本轮真实提交。
-            query_rows.append({"concurrency": level, **run_level(
-                http, student["token"], "GET",
-                f"/api/grading/tasks/{level_tasks[0]}", None,
-                args.requests, level, {200})})
-            retrieval_rows.append({"concurrency": level, **run_level(
-                http, student["token"], "POST", "/api/retrieval/search",
-                {"query": query, "mode": "hybrid", "limit": 5},
-                args.requests, level, {200})})
+            query_rows.append(run_level(
+                lambda _: http.request("GET", f"/api/grading/tasks/{level_tasks[0]}",
+                                       token=student["token"]).status,
+                range(args.requests), level, {200}))
+            retrieval_rows.append(run_level(
+                lambda _: http.request("POST", "/api/retrieval/search", token=student["token"],
+                                       json_body={"query": query, "mode": "hybrid", "limit": 5}).status,
+                range(args.requests), level, {200}))
 
-        result["endpoints"] = {
-            "submit": submit_rows,
-            "taskQuery": query_rows,
-            "retrieval": retrieval_rows,
-        }
-
-        # 默认保留 worker：等本轮任务进入终态后再清理，避免把待消费消息留给下一轮。
-        if task_ids and not args.stop_worker:
+        if worker_stopped:
+            compose(env_file, "start", "grading-worker")
+            worker_stopped = False
+        if task_ids:
             started = time.perf_counter()
             deadline = started + args.wait_timeout
             pending = set(task_ids)
@@ -378,33 +365,46 @@ def main(argv: list[str] | None = None) -> int:
                                   **terminal, "pending": len(pending)}
             if pending:
                 raise RuntimeError(f"仍有 {len(pending)} 个任务未在 {args.wait_timeout}s 内进入终态")
-        result["passed"] = True
+        safe_to_clean = True
+        result["passed"] = all(
+            row["statuses"] == {"202" if name == "submit" else "200": row["requests"]}
+            for name, rows in result["endpoints"].items() for row in rows
+        )
     except Exception as exception:  # noqa: BLE001 - 原始错误脱敏后写入结果
         result["passed"] = False
         result["error"] = type(exception).__name__
         print(f"bench failed: {type(exception).__name__}", file=sys.stderr)
     finally:
+        if worker_stopped:
+            try:
+                compose(env_file, "start", "grading-worker")
+            except Exception as exception:  # noqa: BLE001 - 单独记录恢复失败，保留清理结果
+                result["workerRestoreError"] = type(exception).__name__
+                result["passed"] = False
+                print("bench worker restore failed", file=sys.stderr)
+        result["assignmentIds"] = assignment_ids
+        if not safe_to_clean:
+            result["cleanupDeferred"] = True
+            print("本轮提交的终态未确认，保留资源标识供人工清理", file=sys.stderr)
         try:
-            if assignment_ids and class_id is not None:
+            if safe_to_clean and assignment_ids and class_id is not None:
                 result["cleanup"] = cleanup(db, class_id, assignment_ids, task_ids, title_prefix)
-            if material_id is not None and teacher is not None:
+            if safe_to_clean and material_id is not None and teacher is not None:
                 delete_material(http, teacher["token"], material_id)
                 result["materialCleaned"] = True
-            if worker_stopped:
-                compose(env_file, "start", "grading-worker")
-            if args.purge_queue and initial_depth == 0:
-                purge_queue(env, args.queue)
         except Exception as exception:  # noqa: BLE001 - 清理失败必须保留在工作区供人工处理
             result["cleanupError"] = type(exception).__name__
+            result["passed"] = False
             print(f"bench cleanup failed: {type(exception).__name__}", file=sys.stderr)
         (output / f"bench-{run_id}.json").write_text(
             json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
 
     if not result.get("passed"):
+        print(f"bench summary: {output / ('bench-' + run_id + '.json')}")
         return 1
     for name in ("submit", "taskQuery", "retrieval"):
         for row in result["endpoints"][name]:
-            print(f"{name} c={row['concurrency']} qps={row['qps']} "
+            print(f"{name} c={row['concurrency']} peak={row['peakInFlight']} qps={row['qps']} "
                   f"p50={row['p50Ms']}ms p95={row['p95Ms']}ms status={row['statuses']}")
     print(f"bench summary: {output / ('bench-' + run_id + '.json')}")
     return 0

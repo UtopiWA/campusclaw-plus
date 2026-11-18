@@ -35,6 +35,9 @@ def maven() -> list[str]:
     if version is not None and not re.fullmatch(r"1\.\d{1,2}", version, flags=re.ASCII):
         raise EnvironmentFailure("invalid TESTCONTAINERS_API_VERSION")
     command = [str(wrapper), "-f", str(ROOT / "backend/pom.xml")]
+    if os.name != "nt":
+        # Windows 提交的 wrapper 可能没有可执行位。
+        command.insert(0, tool("sh"))
     if version is not None:
         command.append(f"-Dapi.version={version}")
     return command

@@ -97,7 +97,7 @@ services:
     environment:
       <<: *grading-environment
       # 默认使用镜像标签写入健康检查版本；显式设置 APP_VERSION 可覆盖。
-      APP_VERSION: ${IMAGE_TAG:-local}
+      APP_VERSION: ${APP_VERSION-${IMAGE_TAG:-local}}
       DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-campusclaw}?useUnicode=true&characterEncoding=utf8&connectionTimeZone=UTC
       DB_USERNAME: ${MYSQL_USER:-campusclaw}
       DB_PASSWORD: ${MYSQL_PASSWORD}
@@ -163,7 +163,7 @@ services:
     environment:
       <<: *grading-environment
       SPRING_PROFILES_ACTIVE: worker
-      APP_VERSION: ${IMAGE_TAG:-local}
+      APP_VERSION: ${APP_VERSION-${IMAGE_TAG:-local}}
       DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-campusclaw}?useUnicode=true&characterEncoding=utf8&connectionTimeZone=UTC
       DB_USERNAME: ${MYSQL_USER:-campusclaw}
       DB_PASSWORD: ${MYSQL_PASSWORD}

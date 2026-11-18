@@ -1,12 +1,16 @@
 name: ci
 
-# 推送/PR 触发的功能门禁与镜像构建。完整安全门禁需要私有配置和模型环境，
-# 由 security-gate.yml 在团队自托管运行器上执行；两者都是合入必需检查。
+# 托管功能门禁和镜像构建。完整安全门禁由成员在独立环境执行。
 on:
   push:
     branches: [master]
   pull_request:
   workflow_dispatch:
+    inputs:
+      upload_images:
+        description: "上传可通过 docker load 导入的镜像包"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -21,7 +25,7 @@ env:
 jobs:
   functional-gate:
     name: functional gate (unit + integration)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -48,6 +52,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci --prefix frontend
 
+      - name: Install Python test dependencies
+        run: python -m pip install -r apitest/requirements.txt
+
       - name: Unit gate
         run: python scripts/check.py --mode unit
 
@@ -71,7 +78,7 @@ jobs:
   image-build:
     name: image build and provenance
     needs: functional-gate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -81,11 +88,13 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${GITHUB_SHA::7}"
-          for service in backend frontend mcp-server; do
+          for service in backend frontend mcp-demo; do
+            context="$service"
+            if [[ "$service" == mcp-demo ]]; then context=mcp-server; fi
             docker build \
               --build-arg GIT_COMMIT="${GITHUB_SHA}" \
               -t "campusclaw-plus-${service}:${TAG}" \
-              "./${service}"
+              "./${context}"
           done
 
       - name: Record image identifiers
@@ -99,7 +108,7 @@ jobs:
             echo "runNumber=${GITHUB_RUN_NUMBER}"
             echo "commit=${GITHUB_SHA}"
             echo "imageTag=${TAG}"
-            for service in backend frontend mcp-server; do
+            for service in backend frontend mcp-demo; do
               image="campusclaw-plus-${service}:${TAG}"
               echo "${service}ImageId=$(docker image inspect --format '{{.Id}}' "${image}")"
               echo "${service}Labels=$(docker image inspect --format '{{json .Config.Labels}}' "${image}")"
@@ -113,3 +122,24 @@ jobs:
           name: image-provenance-${{ github.run_id }}
           path: reports/ci/
           retention-days: 30
+
+      - name: Export images
+        if: github.event_name == 'workflow_dispatch' && inputs.upload_images
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_SHA::7}"
+          mkdir -p reports/ci-images
+          docker save "campusclaw-plus-backend:${TAG}" \
+            "campusclaw-plus-frontend:${TAG}" "campusclaw-plus-mcp-demo:${TAG}" \
+            | gzip -c > "reports/ci-images/campusclaw-plus-${TAG}.tar.gz"
+
+      - name: Upload image bundle
+        if: github.event_name == 'workflow_dispatch' && inputs.upload_images
+        uses: actions/upload-artifact@v4
+        with:
+          name: campusclaw-plus-images-${{ github.run_id }}
+          path: reports/ci-images/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7

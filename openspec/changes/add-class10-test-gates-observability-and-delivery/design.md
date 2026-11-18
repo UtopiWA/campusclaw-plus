@@ -3,12 +3,11 @@
 ## 1. 门禁与 CI
 
 - 功能门禁沿用 `scripts/check.py`：`unit` 覆盖规约、前端、非容器后端、MCP 和脚本；`integration` 使用独立 Testcontainers；`api` 复用真实接口套件。`make check` 固定为 `--mode all`，失败停止后续组并返回非零。
-- 安全门禁沿用 `scripts/security_gate.py` 五阶段；本次只补执行证据和 CI 接入，不改变阶段范围。
+- 安全门禁沿用 `scripts/security_gate.py` 五阶段，在独立团队环境针对候选提交运行并记录结果。
 - 受控红使用临时改坏的测试期望，在隔离分支/工作区制造真实失败；记录改坏位置、失败用例、退出码，再恢复并复绿。安全门禁的合成故障继续使用已有 `--fault-stage`，不伪造真实漏洞。
 - 开发依赖例外：`security-exceptions.json` 只覆盖用户 2026-11-18 确认的 `GHSA-fc5q-39xc-vjpf`（5 个传播包），必须显式 `--exceptions`、已批准且未过期；`scan.py` 保留原始 audit JSON/失败码并标记 `ACCEPTED_EXCEPTION`，任何未覆盖的新 high/critical、过期或未批准例外都失败。例外到期 2026-12-18，不改变扫描级别或排除 dev 依赖。
-- GitHub Actions 分两层：
-  - `ci.yml` 在 GitHub 托管运行器执行 unit、integration 和三个镜像构建；镜像带 `GIT_COMMIT` 标签并记录 image ID/标签。
-  - `security-gate.yml` 绑定团队自托管运行器，要求 `CAMPUSCLAW_ENV_FILE` 指向私有配置；缺失文件直接退出 2。完整 access/audit/api 依赖真实或受控模型环境，不使用托管运行器的空凭据假装通过。
+- `ci.yml` 在 GitHub 托管运行器安装检查依赖，执行 unit、integration 和三个镜像构建。镜像命名与 Compose 对齐，记录 image ID、标签及提交。手动运行可选导出镜像包用于复现。
+- 公开仓库撤下自托管 `security-gate.yml`。保留完整本地门禁，由成员使用私有配置在独立部署中核对候选镜像的 revision 后运行。
 - 实际推送、运行编号和镜像推送仍由获得授权的成员执行；代理只提交配置和本地等价证据。
 
 ## 2. 镜像与版本追溯
@@ -42,7 +41,7 @@
 ## 5. 压测与缓存
 
 - `bench.py` 上传本轮唯一合成讲义，等待 READY；教师创建 N 个唯一作业，学生在 worker 保留时逐个提交；任务查询使用本轮 taskId；检索使用合成切片查询。
-- 默认 worker 保留并等待任务终态后再清理，避免把待消费消息留给下一轮；仅在隔离环境使用 `--stop-worker`。队列初始非空且未确认清理时直接退出。
+- 每档请求数至少等于最大并发设置，记录请求在途峰值。队列初始深度必须可读且为零。默认保留 worker；使用 `--stop-worker` 时在测量结束后恢复，再等任务终态。运行或清理失败返回非零，保留待人工处理的资源标识。
 - 清理按精确 ID/标题前缀核对后删除 outbox、results、reviews、tasks、submissions、assignments，再通过 API 删除合成讲义；任何核对失败停止删除。
 - 改进：`OpenAiEmbeddingGateway` 增加有界 LRU（`EMBEDDING_CACHE_SIZE`，默认 256，0 关闭）。键只包含查询文本，向量只取决于文本和当前模型；不包含班级/用户，不涉及评分或授权。配置变更/进程重启自然失效，避免陈旧模型切换。
 - 正确性：检索命中仍按 class_id、READY 和材料白名单回表；缓存不绕过任何过滤。教师改分不读取 embedding 缓存，因此无需改分失效逻辑。
@@ -53,4 +52,4 @@
 - 门禁/CI 失败非零；缺私有配置、Docker、模型或扫描工具时退出 2，不跳过。
 - 观测/压测清理失败保留工作区并打印稳定类别；不把未知队列深度或缺失日志写成 0。
 - 所有原始输出在 `backend/target/` 忽略目录；`reports/` 只写脱敏摘要、命令和可定位路径。
-- 未执行项（真实 CI 推送运行、镜像推送、真实手机/三名用户、另一成员独立复现、交叉评审）保持未完成。
+- CI 修复验证、干净环境启动、有效并发复测及另一成员独立复现和交叉评审按实际结果记录。

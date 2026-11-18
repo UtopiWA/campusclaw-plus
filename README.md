@@ -4,7 +4,7 @@
 
 **当前可用：** 师生首页、讲义与标签检索、助手对话与 MCP、异步作业及教师终评、私人AI题库、掌握度统计和学习计划。登录默认进入 `/home`：教师查看班级掌握与作业进展，学生查看待交作业、计划进度和最近成绩；首页不调用模型。
 
-**当前状态：** 本阶段业务功能已完成并归档；Class09安全审计与门禁已完成独立复核、成员确认、规格同步及归档。Class10测试门禁、镜像追溯、观测/压测与证据已实施，活动 change 见[Class10](openspec/changes/add-class10-test-gates-observability-and-delivery/proposal.md)；安全门禁在用户确认的有期限开发依赖例外下五阶段全 0，原始 5 个 high 告警保留且字面“高危 0”未达到，真实 CI、干净环境启动、手机/真实用户和成员交叉评审尚未完成。详见[Class10 记录](docs/lesson-10/README.md)与[项目状态](docs/project-status.md)。讲义和题目使用平面标签，按标签选题，不做知识图谱或难度调节；模型安排学习计划，学生主动调整。
+**当前状态：** 本阶段业务功能已完成并归档；Class09安全审计与门禁已完成独立复核、成员确认、规格同步及归档。Class10测试门禁、镜像追溯、观测/压测与证据已实施，活动 change 见[Class10](openspec/changes/add-class10-test-gates-observability-and-delivery/proposal.md)；安全门禁在用户确认的有期限开发依赖例外下五阶段全 0，原始 5 个 high 告警保留且字面“高危 0”未达到，CI 修复后的远端通过记录、干净环境启动和成员交叉评审尚未完成。详见[Class10 记录](docs/lesson-10/README.md)与[项目状态](docs/project-status.md)。讲义和题目使用平面标签，按标签选题，不做知识图谱或难度调节；模型安排学习计划，学生主动调整。
 
 ## 文档
 
@@ -18,7 +18,7 @@
 - [学习诊断与辅导](docs/learning/README.md)：讲义标签、作业与私人题库、学习计划、掌握度统计和验收步骤。
 - [Class08 安全自查](reports/security-precheck.md)：授权、并发/事务、密钥与依赖结果；[独立 Docker 复核](reports/review-01.md)已完成并归档。
 - [Class09 记录](docs/lesson-09/README.md)：审计补齐、三条输入安全反例、SEC-08 和安全门禁；[修复台账](reports/security-fix-log.md)、[审计回查](reports/audit-recheck.md)、[门禁红绿](reports/gate-red-green.md)。
-- [Class10 记录](docs/lesson-10/README.md)：测试收口、双门禁红绿、镜像追溯、CI、观测/告警和压测；证据包括[启动](reports/boot-reproduce.md)、[流水线](reports/pipeline.md)、[观测告警](reports/observe-alert.md)、[压测](reports/bench.md)、[反馈缺口](reports/feedback.md)、[AI 自审](reports/review-05.md)。
+- [Class10 记录](docs/lesson-10/README.md)：测试收口、双门禁红绿、镜像追溯、CI、观测/告警和压测；证据包括[启动](reports/boot-reproduce.md)、[流水线](reports/pipeline.md)、[观测告警](reports/observe-alert.md)、[压测](reports/bench.md)、[AI 自审](reports/review-05.md)。
 
 ## 技术栈
 
@@ -126,7 +126,9 @@ make build-images   # GIT_COMMIT/IMAGE_TAG 传入三个镜像
 make pipeline       # 功能门禁 -> 安全门禁 -> 镜像构建（本机等价流水线）
 ```
 
-`scripts/bench.py` 默认保留 worker 并在本轮任务终态后清理；队列初始非空时拒绝混跑。`scripts/observe.py` 从既有消息、JSON 日志和 RabbitMQ 管理 API 生成三技能面板；告警需要显式 `--alert-webhook` 并实际送达。查询向量缓存由可选 `EMBEDDING_CACHE_SIZE` 控制（默认 256，0 关闭），不改变检索结果和授权。GitHub Actions 配置见 `.github/workflows/ci.yml` 和 `security-gate.yml`；实际推送运行尚未执行。最新红/绿、未完成项与安全扫描见 [Class10 记录](docs/lesson-10/README.md)。
+`scripts/bench.py` 需要可读且初始为空的队列，默认保留 worker，在任务终态后清理。`scripts/observe.py` 从已有消息、JSON 日志和 RabbitMQ 管理 API 生成技能面板，使用 `--alert-webhook` 发送告警。查询向量缓存由 `EMBEDDING_CACHE_SIZE` 控制，默认 256，设为 0 可关闭。
+
+GitHub Actions 托管 CI 执行单元、集成与镜像构建。完整安全门禁在独立团队环境运行。运行结果见[流水线记录](reports/pipeline.md)及[Class10 记录](docs/lesson-10/README.md)。
 
 ## 开发与安全
 

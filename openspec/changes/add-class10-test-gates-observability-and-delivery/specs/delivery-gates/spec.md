@@ -41,22 +41,26 @@
 
 ### Requirement: CI 与镜像提交追溯
 
-系统 MUST 在推送或拉取请求触发时执行与本地相同的功能检查并构建后端、前端和 MCP 镜像；完整安全门禁 MUST 在具备私有配置、Docker 和模型环境的自托管运行器执行，缺失环境 MUST 失败而不是跳过。镜像 MUST 带有构建提交的 OCI `revision` 标签，镜像标签 MUST 绑定构建标识；运行健康接口 MUST 返回同一部署版本，禁止只用 `latest` 追溯。
+系统 MUST 在主干推送或拉取请求触发时在托管运行器执行功能检查并构建三个镜像。完整安全门禁 MUST 在具有私有配置、Docker 和模型环境的独立团队环境执行。镜像 MUST 携带提交的 OCI `revision` 标签，并使用与 Compose 一致的服务名及构建标签。运行健康接口 MUST 默认返回镜像标签，显式 `APP_VERSION` 继续遵守现有覆盖和校验规则。
 
 #### Scenario: 推送触发检查与构建
 - **WHEN** 向主干推送或提交拉取请求
 - **THEN** CI MUST 执行功能门禁的 unit/integration 范围并构建三个镜像
 - **AND** 运行记录 MUST 保存运行编号、提交 SHA、镜像标签和 image ID 供反查
 
+#### Scenario: 手动导出镜像包
+- **WHEN** 成员手动触发 CI 并启用镜像上传，且检查及构建通过
+- **THEN** CI MUST 上传当前提交的三个镜像包，支持 `docker load` 导入后按原标签复现
+
 #### Scenario: 缺少安全门禁环境
-- **WHEN** 自托管运行器缺少私有 `.env.team`、Docker 或扫描/模型依赖
-- **THEN** 安全门禁工作流 MUST 非零退出并报告缺失项
+- **WHEN** 在团队环境运行门禁时缺少私有配置、Docker 或扫描/模型依赖
+- **THEN** 安全门禁 MUST 非零退出并报告缺失项
 - **AND** MUST NOT 以跳过阶段或空凭据伪造通过
 
 #### Scenario: 版本可反查
 - **WHEN** 使用 `GIT_COMMIT` 和 `IMAGE_TAG` 构建并启动部署
 - **THEN** 镜像 inspection MUST 返回对应 `org.opencontainers.image.revision`
-- **AND** `/health` 的 `version` MUST 与本次镜像标签一致；工作区未提交时 MUST 在证据中标明 dirty 状态
+- **AND** 未显式覆盖时 `/health.version` MUST 与本次镜像标签一致；未提交修改的构建 MUST 标明 dirty 状态
 
 ### Requirement: 四项教学行为守护
 
@@ -88,7 +92,7 @@
 
 #### Scenario: 三接口分档压测
 - **WHEN** 以多个并发档位运行压测脚本
-- **THEN** 每个档位 MUST 报告提交、任务查询、检索的 QPS、P50/P95、错误率和状态计数
+- **THEN** 每个档位请求数 MUST 不小于并发设置，并报告提交、任务查询、检索的在途峰值、QPS、P50/P95、错误率和状态计数
 - **AND** 提交 MUST 使用本轮独立作业，不得用幂等重放或 409 去重冒充新任务接收能力
 
 #### Scenario: 缓存同口径复测
@@ -99,7 +103,7 @@
 #### Scenario: 清理与失败边界
 - **WHEN** 压测因依赖失败或超时未完成
 - **THEN** 脚本 MUST 记录稳定错误类别并尽力清理本轮可归属数据
-- **AND** 清理前核对失败或队列非空时 MUST 停止删除并保留工作区供人工处理
+- **AND** 队列初始非空或不可读时 MUST 拒绝启动；无法确认任务终态或清理失败时 MUST 非零退出并保留待处理资源标识，仍尝试恢复本轮停止的 worker
 
 ### Requirement: 派生观测面板与真实告警
 

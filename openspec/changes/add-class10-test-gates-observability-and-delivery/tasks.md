@@ -27,8 +27,8 @@
 - [x] 3.1 `Makefile` 提供 `check`、`check-security`、`build-images`、`up/down`、`bench`、`observe` 和本地 `pipeline` 目标。
   Verify：目标命令与 README/Class10 记录一致；`check` 使用 `--mode all`，安全门禁使用完整五阶段。
 
-- [x] 3.2 新增 `.github/workflows/ci.yml`（托管运行器：unit/integration、镜像构建与 provenance）和 `security-gate.yml`（自托管完整安全门禁）。
-  Verify：工作流语法解析成功；缺失私有配置时安全门禁非零退出；本地等价命令可执行。
+- [x] 3.2 修复托管 CI 的 Linux 检查入口和依赖安装，使三个镜像命名与 Compose 一致；完整安全门禁回到独立团队环境。
+  Verify：本地等价检查及配置校验通过，远端结果记入 3.5。
 
 - [x] 3.3 三个 Dockerfile 写入 `org.opencontainers.image.revision`；Compose 支持 `IMAGE_TAG`/`GIT_COMMIT`，`APP_VERSION` 默认取镜像标签。
   Verify：本地构建三镜像并 `docker image inspect` 得到 revision；重启后 `/health.version` 与镜像标签一致；证据写入 Class10 记录。
@@ -36,8 +36,8 @@
 - [ ] 3.4 在干净目录/另一机器按 README 启动完整七服务并走通功能；记录提交、命令、健康结果和镜像标签。
   Verify：需要独立工作副本和私有配置；未执行时保持未完成，不以当前机器结果代替。
 
-- [ ] 3.5 实际推送触发 CI 并保存运行编号、提交 SHA、镜像 ID/标签；推送与镜像发布需用户授权。
-  Verify：`reports/pipeline.md` 记录真实 GitHub Actions 运行；代理未获授权前不得推送。
+- [ ] 3.5 修复版推送触发 CI，功能门禁和三个镜像构建均通过；保存运行编号、提交 SHA 和镜像 ID/标签。
+  Verify：`reports/pipeline.md` 记录修复提交对应的 GitHub Actions 结果。
 
 ## 4. 压测与缓存改进
 
@@ -47,7 +47,7 @@
 - [x] 4.2 新增查询向量缓存（`EMBEDDING_CACHE_SIZE`，默认 256，0 关闭）及配置绑定/缓存测试。
   Verify：`AppPropertiesBindingTest`、`GatewayClientTest`、`RetrievalServiceTest` 通过；缓存不改变检索结果和授权。
 
-- [x] 4.3 用同一脚本/参数在缓存关闭和开启两种部署下复测三接口，记录前后吞吐/P95、错误率、瓶颈和副作用。
+- [ ] 4.3 用同一脚本/参数在缓存关闭和开启两种部署下复测三接口，记录在途峰值、吞吐/P95、错误率、瓶颈和副作用。
   Verify：原始 JSON 在 `backend/target/bench/`；`reports/bench.md` 记录脚本、环境、两轮值、改进提交和未覆盖项。
 
 ## 5. 观测面板与告警
@@ -66,11 +66,11 @@
 - [x] 6.1 新增/更新 Class10 记录和 `reports/` 材料；同步 README、项目状态、运维/测试规范中的入口和配置。
   Verify：文档链接可解析；命令、结果和未执行项与实际一致；`git diff --check` 无输出。
 
-- [x] 6.2 新增 Class10 AI 自审记录，按文件给出“可用/待修改/风险无效”和七维检查；人工交叉评审、真实用户反馈和另一成员独立启动保持未完成。
+- [x] 6.2 新增 Class10 AI 自审记录，按文件给出“可用/待修改/风险无效”和七维检查；人工交叉评审和另一成员独立启动保持未完成。
   Verify：`reports/review-05.md` 明确 AI 生成范围、实际命令和未验证项；不由代理代签成员结论。
 
 ## 7. 人工验收（代理不代签）
 
-- [ ] 7.1 至少三名真实使用者走完登录、提交、任务查询、跨班材料 404 四步，记录反馈去向。
-- [ ] 7.2 手机 H5 实际走通四步；不同源部署才配置 CORS，同源代理不额外放行。
+三名用户反馈和手机验收已移出本轮范围。
+
 - [ ] 7.3 另一成员独立启动、演示并记录结论；至少三份累计评审中至少两份来源为 AI 自审或脚本发现。

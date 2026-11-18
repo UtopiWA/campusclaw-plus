@@ -2,20 +2,20 @@
 
 日期：2026-11-17（UTC）/ 2026-11-18（本地）
 环境：Windows 11 + Docker Desktop 29.9.2；团队项目 `campusclaw-plus`；MySQL/Qdrant/RabbitMQ 健康；后端镜像 `class10-b30ab9d-dirty`；真实 Chat/Embedding 服务可用。
-脚本：`scripts/bench.py`；原始 JSON 在 `backend/target/bench/`（忽略目录）。压测数据为本轮唯一合成讲义、作业、提交和任务，结束后按 ID 清理并恢复 worker。
+以下为原始小样本记录。最新复核发现请求数小于部分标称并发，原饱和点与高并发提速结论撤回。原始 JSON 在 `backend/target/bench/`（忽略目录）。
 
 ## 1. 脚本与数据边界
 
 ```powershell
-python scripts/bench.py --env-file .env.team --levels <档位> --requests <每档请求数>
+python scripts/bench.py --env-file .env.team --levels 1,4,8 --requests 16
 ```
 
 - 每轮上传一份本轮唯一合成 Markdown 讲义并等待 READY，创建 N 个唯一作业；学生在 worker 保留时逐个作业提交，任务查询使用本轮 `taskId`，检索使用本轮切片内容。
 - 不用幂等重放、409 去重或重复答案冒充新任务接收能力。
 - 默认保留 worker 并等待本轮任务进入 `SUCCEEDED/FAILED` 后再清理；清理前核对标题前缀和 ID，删除 outbox、results、reviews、tasks、submissions、assignments，再经 API 删除讲义。
-- 队列初始非空且未确认清理时脚本拒绝运行；本轮 `grading.tasks` 初始深度 0。
+- 脚本要求初始队列可读且为空，每档请求数至少等于最大并发设置。以 `peakInFlight` 判断实际达到的并发。清理失败返回非零，无法确认终态时保留资源标识。
 
-## 2. 饱和点观察（keyword 检索，初步跑）
+## 2. 旧样本（keyword 检索）
 
 命令：`python scripts/bench.py --env-file .env.team --levels 16,32,64 --requests 16`
 原始结果：`backend/target/bench/bench-20261117T173016Z-75da8e.json`
@@ -26,13 +26,13 @@ python scripts/bench.py --env-file .env.team --levels <档位> --requests <每�
 | 任务查询 QPS / P95 | 471.27 / 22.79 ms | 398.06 / 25.04 ms | 372.02 / 27.19 ms |
 | 检索 QPS / P95 | 357.42 / 34.16 ms | 278.17 / 43.62 ms | 177.82 / 55.03 ms |
 
-提交在 16～32 并发附近趋于平台，64 并发吞吐下降、P95 上升；任务查询和 keyword 检索在 16 并发后下降。该轮检索为 keyword，不调用 Embedding，不能用于缓存前后比较。
+各列是当时配置的线程数，每档只有 16 个请求，实际并发上限为 16。各列差异不足以判断饱和点。该轮使用 keyword 检索，未调用 Embedding。
 
 ## 3. 缓存前后同口径复测
 
-改进：`OpenAiEmbeddingGateway` 增加有界查询向量 LRU；`EMBEDDING_CACHE_SIZE=0` 关闭，默认 256。缓存只以查询文本为键，不包含班级/用户，不改变检索过滤、READY 回表、材料白名单或评分/终评逻辑。
+改进：`OpenAiEmbeddingGateway` 增加进程内向量 LRU，默认 256 条，设为 0 可关闭。网关以输入文本为键，检索和索引共用该缓存，班级隔离、READY 回表及材料白名单仍在检索层检查。
 
-命令（两轮相同）：
+旧命令（两轮相同，现会因请求数不足被拒绝）：
 
 ```powershell
 python scripts/bench.py --env-file .env.team --levels 16,32,64 --requests 8
@@ -48,15 +48,15 @@ python scripts/bench.py --env-file .env.team --levels 16,32,64 --requests 8
 
 - 关闭原始：`backend/target/bench/bench-20261117T173813Z-ac170c.json`
 - 开启原始：`backend/target/bench/bench-20261117T173936Z-b6eda5.json`
-- c=32 检索吞吐约 3.4 倍、c=64 约 5.1 倍；P95 从约 300～393 ms 降到 74～83 ms（c=16 仍受首发未命中和样本量影响）。
+- 每档只有 8 个请求。小样本中重复检索变快，32/64 并发收益尚无实测依据。
 - 同轮提交/任务查询有小幅波动，不属于缓存目标；没有把波动写成改进。
 
 ## 4. 瓶颈与副作用
 
-- 瓶颈：hybrid/vector 检索每条请求等待真实 Embedding 供应商；在 c=32/64 时供应商延迟成为主因，缓存命中后吞吐明显上升。提交主要等待数据库事务和 outbox，任务查询主要受线程/连接池与后端调度影响。
-- 副作用：进程内最多保留 256 条查询文本→向量；不持久化、不跨用户授权，进程重启或配置变更后自然失效。没有缓存评分、终评、材料正文或授权结果。
+- hybrid/vector 检索缓存未命中时需要调用 Embedding 供应商；瓶颈占比留待有效并发复测。
+- 副作用：默认在进程内保留最多 256 条输入文本及其向量。索引批次可能挤出常用查询，重启时缓存清空。
 - 未覆盖：没有做多实例/跨进程缓存；没有验证更大数据量或长期内存压力；未把本机数字当课程统一阈值。
 
 ## 5. 结论
 
-三接口分档压测已入库并可重复；至少一项缓存改进用相同脚本、相同档位/请求数完成前后复测，结果支持“重复查询的 Embedding 调用是主要瓶颈”的归因。原始数据保留在忽略目录，未提交真实用户正文或供应商响应。
+复测使用第 1 节命令，在同一独立环境分别以缓存 0 和 256 启动后端。报告实际在途峰值、吞吐、P95、错误率及清理结果。需要覆盖更高并发时同时增加请求数，并先确认模型额度和批改任务容量。

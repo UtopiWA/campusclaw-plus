@@ -15,7 +15,7 @@ AI 生成范围：本轮新增的 Docker/Compose/Makefile/CI 配置、`bench.py`
 | 功能门禁受控红→绿 | 退出 1→0；失败用例/日志保留 |
 | `python scripts/security_gate.py --env-file .env.team` | 退出 2；scan 2（npm audit 5 high）、access/audit/unit 0、api 首次 1 后重跑 0 |
 | 同上加 `--exceptions security-exceptions.json` | run `20261117T181025Z-73908`：scan/access/audit/api/unit 全 0，总退出 0；原始 5 high 保留，不记为 0 告警 |
-| `python scripts/bench.py ...` | 小样本与 16/32/64 档位实际运行；清理完成 |
+| `python scripts/bench.py ...` | 旧小样本运行记录保留。实际并发达不到部分标称档位，待复测 |
 | `python scripts/observe.py ...` | 三技能面板、告警触发与 HTTP 202 送达 |
 | 三镜像直接 `docker build` | 成功；revision 标签与 health 版本核对 |
 
@@ -66,7 +66,7 @@ AI 生成范围：本轮新增的 Docker/Compose/Makefile/CI 配置、`bench.py`
 - API 首次模型波动未做重复压力确认；真实模型质量、错题讲解教学正确性未评测。
 - 未推送/未运行 GitHub Actions；工作流未在远端验证。
 - 未在干净目录/另一机器启动；未做镜像推送、回滚、跨机器复现。
-- 未做真实手机 H5、三名用户反馈、另一成员独立启动/演示/人工交叉评审。
+- 另一成员独立启动、演示和人工交叉评审待完成。
 - 缓存未做多实例/长时间内存压力；未实现跨进程失效。
 
-结论：代码与脚本层自审为“可用/待修改（CI 未实跑）”，不构成成员评审或 Class10 全部通过；开发依赖例外已由用户确认并保留原始告警，人工项（CI 实跑、干净环境、手机/真实用户、交叉评审）仍须用户/团队处理。
+结论：原自审为“可用/待修改”；后续 CI 实际失败记录见 [pipeline.md](pipeline.md)，不构成成员评审或 Class10 全部通过；开发依赖例外已由用户确认并保留原始告警，人工项（CI 实跑、干净环境、交叉评审）仍须用户/团队处理。

@@ -1,20 +1,20 @@
 # Class10 CI 与制品追溯
 
 日期：2026-11-18
-状态：工作流配置和本地等价构建已完成；**实际推送触发、GitHub Actions 运行编号和镜像推送尚未执行**（需要用户/团队授权与远端凭据）。
+状态：两次远端 CI 均在 Unit gate 退出 2。修复后的远端运行待验证。
 
 ## 1. 工作流
 
 | 文件 | 运行器 | 内容 |
 | --- | --- | --- |
-| `.github/workflows/ci.yml` | GitHub 托管 `ubuntu-latest` | checkout → Java 17/Node 22/Python 3.11 → OpenSpec 1.13.1 → `npm ci` → `check.py --mode unit` → `check.py --mode integration`（Testcontainers，`TESTCONTAINERS_API_VERSION=1.44`）→ 三个 `docker build --build-arg GIT_COMMIT=$GITHUB_SHA` → 记录 image ID/标签 |
-| `.github/workflows/security-gate.yml` | 团队自托管 `[self-hosted, linux, x64, campusclaw]` | checkout 全历史 → 检查私有 `${{ vars.CAMPUSCLAW_ENV_FILE || '.env.team' }}` 和 Docker → `security_gate.py --env-file "$ENV_FILE"`（scan/access/audit/api/unit）→ 上传 summary |
+| `.github/workflows/ci.yml` | GitHub 托管 `ubuntu-24.04` | Java 17、Node 22、Python 3.11、OpenSpec 1.13.1 → 安装前端和 Python 测试依赖 → unit/integration → 构建 backend、frontend、mcp-demo 镜像并记录 image ID/标签 |
+| `scripts/security_gate.py` | 独立团队环境 | 使用私有配置，对同一候选版本执行 scan、access、audit、api、unit |
 
-- 功能与安全是并列的必需检查；安全门禁缺少私有配置、Docker 或扫描/模型依赖时以非零退出，不跳过阶段。
-- 真实凭据只从运行器私有文件/秘密注入，不写入工作流或仓库。
-- `ci.yml` 的 unit/integration 是 `make check` 的同一脚本入口；完整 `--mode all` 的 API 阶段由安全门禁自托管任务和本地运行覆盖。
+- 完整安全门禁保留在独立团队环境。公开仓库的自托管 workflow 已从候选代码移除。
+- 手动运行 CI 时可选 `upload_images` 下载三个镜像的合包，用 `docker load -i campusclaw-plus-<SHA前7位>.tar.gz` 导入。普通推送和 PR 保存构建记录。镜像注册表发布及 digest 记录单独执行。
+- 分支保护中的必需检查按仓库设置核对。若旧安全检查被设为必需检查，需移除旧检查项，并在团队验收记录中保留完整门禁结果。
 
-## 2. 本地等价执行
+## 2. 原实现本地执行记录
 
 | 步骤 | 命令 | 实际结果 |
 | --- | --- | --- |
@@ -30,9 +30,20 @@
 - `health.version` 返回 `class10-b30ab9d-dirty`，与镜像标签一致。
 - 工作区 dirty 是事实：不能把该镜像写成干净提交制品；用户提交后应按新 HEAD 重建并记录新的 image ID/标签。
 
-## 4. 未执行项
+## 4. 远端失败与修复
 
-- 没有 `git push`、没有 GitHub Actions 运行编号、没有远端镜像摘要；代理没有获得推送授权。
-- 没有为 CI 配置真实模型/私有 `.env.team`；自托管安全门禁的实际运行仍需团队运行器和授权。
-- 没有验证 CI 在 GitHub 托管运行器上 Testcontainers/镜像构建的实际网络和缓存表现；工作流语法尚未经过远端真实运行。
-- 没有把本地构建结果当作 CI 通过证据。
+| 提交 | 运行 | 结果 |
+| --- | --- | --- |
+| `659bdf6` | [CI 44147473727](https://github.com/UtopiWA/campusclaw-plus/actions/runs/44147473727) | Unit gate 退出 2，后续集成和构建跳过 |
+| `35bd6c2` | [CI 44148061626](https://github.com/UtopiWA/campusclaw-plus/actions/runs/44148061626) | 同上 |
+| `35bd6c2` | [旧安全门禁 44148061640](https://github.com/UtopiWA/campusclaw-plus/actions/runs/44148061640) | 核查时在等待带指定标签的运行器 |
+
+公开记录只提供退出码。代码核对发现 Linux checkout 中 wrapper 为 `100644`，门禁直接执行会失败。现改为经 `sh` 调用，并在 CI 安装新脚本测试使用的 PyMySQL 依赖。MCP 构建目录仍为 `mcp-server`，镜像名改为 Compose 使用的 `mcp-demo`。
+
+## 5. 修复版本地复核
+
+- Windows 本地功能门禁通过。前端 158 项、后端 256 项、MCP 8 项。脚本更新后单独复跑 55 项通过。
+- 独立 Linux 容器从仅含跟踪文件的副本安装依赖，使用 Java 17、Node 22 和 Python 3.12，保留 `mvnw` 的 0644 权限。运行 `python scripts/check.py --mode unit`，规约、前端测试及构建、后端 256 项、MCP 和脚本检查均通过。
+- 集成门禁配置 `TESTCONTAINERS_API_VERSION=1.44`，44 项通过。三个 Dockerfile 均成功构建，镜像合包通过 `docker load` 导入验证。
+- 使用合成配置验证 Compose 默认版本、显式覆盖和空值传递，以及三个镜像名。
+- 待验证修复提交对应的 GitHub Actions 运行。私有环境完整安全门禁、镜像发布及远端 digest 尚未复测或执行。
