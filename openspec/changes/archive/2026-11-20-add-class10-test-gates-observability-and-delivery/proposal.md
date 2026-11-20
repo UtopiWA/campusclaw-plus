@@ -8,7 +8,7 @@ Class09 已把安全门禁和审计补齐。Class10 补充四项教学行为守�
 
 - 补齐四项教学行为的聚焦守护：解题引导的直接要答案场景、作业批改的迟到结果不覆盖终评、错题讲解评语依据、知识库跨班隔离；建立“规约场景 → 用例 → 执行入口”追溯表。
 - 保留 `make check`（unit/integration/api）与 `make check-security`（scan/access/audit/api/unit）双门禁；新增可执行的受控红绿证据，证明失败退出非零、修复后退出 0。
-- 新增 GitHub Actions：托管运行器执行功能门禁（unit/integration）和带 `GIT_COMMIT` 的镜像构建；完整安全门禁绑定团队自托管运行器，读取私有 `.env.team`，缺失环境必须失败。
+- 新增 GitHub Actions：托管运行器执行功能门禁（unit/integration）和带 `GIT_COMMIT` 的镜像构建。完整安全门禁在独立团队环境运行，使用私有配置。
 - Dockerfile 增加 OCI `revision` 标签，Compose 支持 `IMAGE_TAG`/`GIT_COMMIT`；健康接口版本可反映镜像标签，部署版本可反查提交。
 - 新增 `scripts/bench.py`：提交、任务查询、检索三接口按多并发档位压测，使用独立合成作业/学生数据和唯一标识，结束后清理；队列初始非空时拒绝混跑。
 - 新增查询向量 LRU 缓存（`EMBEDDING_CACHE_SIZE`，默认 256，0 关闭），只缓存文本到向量的确定性结果，不改变检索命中、权限或班级隔离；同脚本同参数给出前后对比。
