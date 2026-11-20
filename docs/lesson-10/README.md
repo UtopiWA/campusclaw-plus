@@ -1,8 +1,8 @@
 # Class10 测试门禁、可复现交付与运行验证记录
 
-最后更新：2026-11-19
+最后更新：2026-11-20
 当前验收提交：`c8e8abf`。第 1 节保留原实现的本地结果，修复版的 CI 和镜像复现见第 4、5 节。
-活动 change：[add-class10-test-gates-observability-and-delivery](../../openspec/changes/add-class10-test-gates-observability-and-delivery/proposal.md)
+归档 change：[add-class10-test-gates-observability-and-delivery](../../openspec/changes/archive/2026-11-20-add-class10-test-gates-observability-and-delivery/proposal.md)
 原验收环境：Windows 11 + Docker Desktop 29.9.2，候选为 `b30ab9d` 加未提交修改，使用团队七服务和真实 Chat/Embedding。
 
 ## 1. 基线与执行入口
@@ -95,7 +95,7 @@
 
 - 新增 `.github/workflows/ci.yml`：托管运行器执行 unit/integration、构建三个镜像并记录 image ID/标签。
 - 完整安全门禁在独立团队环境运行，保留五阶段检查和私有配置。
-- `c8e8abf` 的 CI #3 已通过单元、集成和三个镜像构建。主干尚未配置必需检查，见[流水线记录](../../reports/pipeline.md)。
+- `c8e8abf` 的 CI #3 已通过单元、集成和三个镜像构建。用户已确认 `master` 启用 PR 与必需检查，见[流水线记录](../../reports/pipeline.md)。
 
 ## 6. 观测、告警与面板
 
@@ -133,11 +133,11 @@
 | 安全门禁高危 0 | **字面未达到**；5 high dev 依赖，用户 2026-11-18 确认有期限例外，门禁以 `--exceptions` 通过且不把告警记为 0 |
 | 镜像提交标签与 health 版本 | 干净提交 `c8e8abf` 验证通过 |
 | 干净目录/另一机器启动 | 干净目录与独立卷复现通过，合成模型 |
-| 托管 CI | 第 3 次远端运行通过；主干必需检查待配置 |
+| 托管 CI | 第 3 次远端运行通过；用户于 2026-11-20 确认主干保护已配置 |
 | 三技能面板 | 已完成 |
 | 告警实际触发并送达 | 已完成（HTTP 202 本地接收器） |
 | 三接口压测 | 受控并发 1/2/4 通过，真实环境饱和点待测 |
 | 查询向量缓存 | 同口径复测通过，见压测记录 |
 | 另一成员独立启动、演示和交叉评审 | 已按用户确认关闭任务 7.3 |
 
-远端 CI 和干净目录复现已通过，成员评审已确认完成。主干必需检查和实际供应商环境性能复测仍待收尾。安全门禁仍执行第 3 节记录的有期限依赖例外。
+远端 CI 和干净目录复现已通过，成员评审已确认完成。主干保护已配置。实际供应商环境性能复测留待后续。安全门禁仍执行第 3 节记录的有期限依赖例外。

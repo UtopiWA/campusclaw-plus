@@ -1,7 +1,7 @@
 # Class10 CI 与制品追溯
 
 日期：2026-11-18
-状态：修复提交 `c8e8abf` 的远端 CI 已通过。主干尚未配置必需检查。
+状态：修复提交 `c8e8abf` 的远端 CI 已通过。用户已确认 `master` 启用 PR 与必需检查。
 
 ## 1. 工作流
 
@@ -12,7 +12,8 @@
 
 - 完整安全门禁保留在独立团队环境。公开仓库的自托管 workflow 已从候选代码移除。
 - 手动运行 CI 时可选 `upload_images` 下载三个镜像的合包，用 `docker load -i campusclaw-plus-<SHA前7位>.tar.gz` 导入。普通推送和 PR 保存构建记录。镜像注册表发布及 digest 记录单独执行。
-- 2026-11-18 通过 [分支接口](https://api.github.com/repos/UtopiWA/campusclaw-plus/branches/master) 和 [分支规则接口](https://api.github.com/repos/UtopiWA/campusclaw-plus/rules/branches/master) 核对：`master` 的 `protected=false`，没有生效的必需检查或规则集。CI 已能自动报告结果，阻止失败合入仍需配置。
+- 2026-11-18 通过 [分支接口](https://api.github.com/repos/UtopiWA/campusclaw-plus/branches/master) 和 [分支规则接口](https://api.github.com/repos/UtopiWA/campusclaw-plus/rules/branches/master) 核对：`master` 的 `protected=false`，没有生效的必需检查或规则集。该结果为配置前记录。
+- 2026-11-20 用户确认已配置 `master` 保护，要求通过 PR 合入，且 `functional gate (unit + integration)`、`image build and provenance` 为必需检查。未要求 GitHub 强制另一成员批准。首个受保护 PR 的实际拦截状态待核对。
 
 ## 2. 原实现本地执行记录
 

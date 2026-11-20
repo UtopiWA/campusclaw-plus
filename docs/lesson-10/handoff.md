@@ -4,7 +4,7 @@
 交接日期：2026-11-18
 原始实现提交：`659bdf6`，交接提交：`35bd6c2`。CI 修复结果见[流水线记录](../../reports/pipeline.md)。
 Class10 记录：[README](README.md)
-活动 change：[add-class10-test-gates-observability-and-delivery](../../openspec/changes/add-class10-test-gates-observability-and-delivery/proposal.md)
+归档 change：[add-class10-test-gates-observability-and-delivery](../../openspec/changes/archive/2026-11-20-add-class10-test-gates-observability-and-delivery/proposal.md)
 
 ## 0. 先看结论
 
@@ -12,7 +12,8 @@ Class10 记录：[README](README.md)
 - 原实现本地功能门禁通过：后端 **256**、前端 **158**、脚本 **53**、MCP **8**、容器集成 **44**、真实接口通过。修复版检查另见流水线记录。
 - 安全门禁在用户确认的有期限开发依赖例外下绿：run `20261117T181025Z-73908`，scan/access/audit/api/unit 全 **0**。**这不是“高危 0”**：`npm audit` 仍有 5 个 high，例外 `security-exceptions.json` 到期 **2026-12-18**。
 - 2026-11-19，用户确认另一成员已审核完毕，任务 7.3 结项。
-- 未完成：主干必需检查、已有主规格的逐场景追溯、真实模型行为评测、性能 worker 侧口径、就绪/存活与 RPO/RTO 实际恢复、五动作预演。
+- 2026-11-20，用户确认主干保护已配置，规格已同步并归档。
+- 后续验证：已有主规格的逐场景追溯、真实模型行为评测、性能 worker 侧口径、就绪/存活与 RPO/RTO 实际恢复、五动作预演。
 
 ## 1. 当前提交与环境
 
@@ -84,7 +85,7 @@ docker compose --env-file .env.team up -d --no-build --wait --wait-timeout 300
 | 三接口压测 + 查询向量缓存 | [bench.md](../../reports/bench.md)；原始 JSON 在 `backend/target/bench/` |
 | 三技能面板 + 告警送达 | [observe-alert.md](../../reports/observe-alert.md)；HTML 快照在 `reports/` |
 | Class10 记录与 AI 自审 | [README](README.md)、[review-05.md](../../reports/review-05.md) |
-| 活动 OpenSpec change | 已通过 `openspec validate --all --strict`；未同步主规格、未归档 |
+| OpenSpec | 2026-11-20 同步主规格并归档 |
 
 ### 安全例外要点
 
@@ -97,11 +98,9 @@ docker compose --env-file .env.team up -d --no-build --wait --wait-timeout 300
 
 修复版的 [CI](../../reports/pipeline.md) 和 [干净目录技术复现](../../reports/boot-reproduce.md#5-修复提交的干净目录复现) 已通过，成员交叉评审已获确认。
 
-### A. 剩余团队验收
+### A. 主干合入
 
-| # | 任务 | 做法与判据 |
-| --- | --- | --- |
-| 1 | 主干保护 | 仓库管理员为 `master` 要求通过 PR 合入，并选中现有 `functional gate (unit + integration)` 和 `image build and provenance` 必需检查。完整安全门禁在独立团队环境执行。 |
+`master` 要求经 PR 合入，并以功能和镜像构建两项 CI 检查为必需条件。GitHub 未设置同伴批准为必需条件，成员复核仍按团队规则记录。
 
 ### B. 需要补强/确认的部分完成项
 
@@ -110,18 +109,14 @@ docker compose --env-file .env.team up -d --no-build --wait --wait-timeout 300
 | 1 | 规约场景逐条追溯 | 当前是能力级入口，不是每个 Scenario 签字；按主规格逐条补“场景→测试/接口用例”矩阵，缺用例先补。 |
 | 2 | 真实模型行为评测 | 解题引导/错题讲解目前只验证提示词和替身；用合成样本实际跑“直接索要答案仍引导”“讲解不整段复制答案”，记录模型表现，不把提示词测试当模型通过。 |
 | 3 | 性能口径 | 受控环境已复测缓存前后。真实供应商环境的饱和点、worker 吞吐和 `EXPLAIN` 待补，区分接口接收吞吐与模型执行吞吐。 |
-| 4 | 主干保护与 CI 实证 | 修复版 CI #3 通过。配置分支保护后再验证失败检查无法合入。 |
+| 4 | 主干保护与 CI 实证 | 修复版 CI #3 通过，主干保护已配置。在首个 PR 上确认必需检查生效。 |
 | 5 | 就绪/存活与 RPO/RTO | 当前只有 `/health` 和 Compose healthcheck；明确是否新增 readiness/liveness（需 change 规约），并说明单实例部署；RPO/RTO 目标与实际恢复演练分开，未演练不得写达标。 |
 | 6 | 展示五动作预演 | 门禁受控拦坏→一键启动→技能面板→四步演示→压测前后对比；正式报告按第 11 课。 |
 | 7 | 安全例外复查 | 2026-12-18 前复查；上游修复则升级/替换并移除例外。字面“高危 0”仍未达到。 |
 
-### C. 收尾流程（需用户授权）
+### C. 归档结果
 
-1. 按实际结果更新 `tasks.md`；不要把未执行项勾上。
-2. 成员评审已完成，按实际状态确认剩余交付项，再决定同步主规格和归档。
-3. 更新 README、项目状态、Class10 记录中的活动/归档状态。
-4. `openspec validate --all --strict`、`git diff --check`、`git status --short`。
-5. 提交/推送/合入/标签按用户和团队授权办理；不强制推送、不改写已推送历史。
+20 项任务已完成。2026-11-20 同步 `delivery-gates` 主规格并归档，后续提交通过 PR 合入。
 
 ## 5. 常用命令
 
@@ -164,9 +159,8 @@ python -m unittest discover -s scripts/tests
 - **dirty 镜像**：已推送提交是 `659bdf6`，但现有镜像标签来自 dirty 工作区 @ `b30ab9d`；接手后重建干净镜像并更新证据。
 - **不要提交**：`.env.team`、真实密钥、学生数据、原始供应商响应、未脱敏日志、`class10.md` 课程文件。
 - **不要代签**：成员评审和独立复现结论必须由实际执行人填写；AI 只可协助整理。
-- **不要提前归档**：change 仍未同步主规格/归档；需复测、评审和用户授权。
 
-## 7. 交接检查清单
+## 7. 复现检查清单
 
 - [ ] 已拉取 `659bdf6` 或其后提交，工作区无未提交业务修改。
 - [ ] 私有 `.env.team`、Docker、Java/Python/Node、模型服务可用。
@@ -176,11 +170,11 @@ python -m unittest discover -s scripts/tests
 - [ ] 运行安全门禁（显式例外），确认五阶段 0；同时确认无例外时仍会红。
 - [x] 干净目录的技术复现通过。成员独立复现见下项。
 - [x] 核对修复版 CI 和镜像标识制品。
-- [ ] 配置主干必需检查，独立团队环境复核时检查完整安全门禁。
+- [x] 用户已确认配置主干必需检查。
 - [x] 已收到另一成员评审完成的确认，见 Class10 记录。
 - [ ] 补完场景追溯、真实模型评测、性能 worker 口径、就绪/RPO、五动作预演。
 - [ ] 2026-12-18 前复查安全例外。
-- [ ] 经授权后再提交/推送/同步/归档。
+- [x] 已同步主规格并归档。
 
 ## 8. 证据索引
 
@@ -192,5 +186,5 @@ python -m unittest discover -s scripts/tests
 - [压测与缓存](../../reports/bench.md)
 - [AI 自审](../../reports/review-05.md)
 - [安全基线](../../reports/security-baseline.md)
-- [活动 OpenSpec tasks](../../openspec/changes/add-class10-test-gates-observability-and-delivery/tasks.md)
+- [归档任务清单](../../openspec/changes/archive/2026-11-20-add-class10-test-gates-observability-and-delivery/tasks.md)
 - 原始日志：`backend/target/class10-red/`、`backend/target/security-gate/`、`backend/target/scan-logs/`、`backend/target/bench/`、`backend/target/observe/`
