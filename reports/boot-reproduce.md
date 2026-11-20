@@ -1,7 +1,7 @@
 # Class10 启动与镜像追溯
 
 日期：2026-11-17（UTC）/ 2026-11-18（本地）
-范围：本机团队 Docker 的重新构建、启动和版本反查。**未**在另一干净目录或另一台机器独立启动；该人工步骤保持未完成。
+第 1～4 节记录原实现的团队 Docker 验证。修复提交的干净目录复现在第 5 节。
 
 ## 1. 构建命令
 
@@ -57,3 +57,19 @@ docker compose --env-file .env.team up -d --no-build --wait --wait-timeout 300
 - 前端 502 复现：重建 backend 后需 `docker compose restart frontend` 刷新 Nginx 上游解析；已按 README 执行。
 - 未执行镜像推送、远端拉取、回滚演练或跨机器启动。
 - 七服务均处于运行状态，但只有配置 healthcheck 的服务显示 healthy；不把“Up”写成“全部健康”。
+
+## 5. 修复提交的干净目录复现
+
+2026-11-18，从 `c8e8abf34a94fdd47dd8e673bfe550416a0c51c4` 通过 `git archive` 生成干净副本。使用 Docker Engine 29.8.2 Linux、独立项目名、空数据卷和仅绑定回环的测试端口。测试配置使用新生成的合成凭据和本地 OpenAI 兼容替身，按第 1 节直接构建三个 Dockerfile，标签取 `c8e8abf`，再运行 `docker compose --env-file .env.team up -d --no-build --wait`。本地合成模型由临时 Compose 覆盖文件挂进同一个测试网络。
+
+| 镜像用途 | 本地 Image ID |
+| --- | --- |
+| backend / grading-worker | `sha256:e23103ecd57ced828c119a1727fc90975988c224bfdb3024e8ad61b860968fd5` |
+| frontend | `sha256:4cea03b33e061e439017e008a6c2cc8e1b09f7d6b1fcde60424b3dbbbfb055ac` |
+| mcp-demo | `sha256:f73f244aa055fa9449e308370e8ced1b7e54fa751105fd3656f4d25983bf7a91` |
+
+三个镜像的 OCI revision 均匹配完整提交。七服务运行，五个服务健康检查通过。前端页面返回 200，`/health` 经前端代理返回 200，版本为 `c8e8abf`，数据库和 Qdrant 均为 up。
+
+教师、同班学生和跨班学生通过合成账号登录。上传讲义达到 READY。学生提交返回 202 和任务 ID，停 worker 时保持 PENDING，恢复后进入 SUCCEEDED。跨班材料读取返回 404，跨班检索 200 且 0 命中，本班有 1 条命中。现有 `four_step_demo.py` 限定标准团队项目名和数据库名，本轮用临时脚本按同一业务判据验证。
+
+执行 `docker compose down --volumes --remove-orphans` 清理本轮专用项目，确认容器、卷及网络均无残留。临时配置和镜像标签已删除，脱敏原始摘要在忽略目录 `backend/target/class10-review/cc10-de9b1dc2/`。本节记录技术复现，另一成员的独立启动、真实模型质量与交叉评审另记。

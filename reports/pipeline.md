@@ -1,7 +1,7 @@
 # Class10 CI 与制品追溯
 
 日期：2026-11-18
-状态：两次远端 CI 均在 Unit gate 退出 2。修复后的远端运行待验证。
+状态：修复提交 `c8e8abf` 的远端 CI 已通过。主干尚未配置必需检查。
 
 ## 1. 工作流
 
@@ -12,7 +12,7 @@
 
 - 完整安全门禁保留在独立团队环境。公开仓库的自托管 workflow 已从候选代码移除。
 - 手动运行 CI 时可选 `upload_images` 下载三个镜像的合包，用 `docker load -i campusclaw-plus-<SHA前7位>.tar.gz` 导入。普通推送和 PR 保存构建记录。镜像注册表发布及 digest 记录单独执行。
-- 分支保护中的必需检查按仓库设置核对。若旧安全检查被设为必需检查，需移除旧检查项，并在团队验收记录中保留完整门禁结果。
+- 2026-11-18 通过 [分支接口](https://api.github.com/repos/UtopiWA/campusclaw-plus/branches/master) 和 [分支规则接口](https://api.github.com/repos/UtopiWA/campusclaw-plus/rules/branches/master) 核对：`master` 的 `protected=false`，没有生效的必需检查或规则集。CI 已能自动报告结果，阻止失败合入仍需配置。
 
 ## 2. 原实现本地执行记录
 
@@ -37,8 +37,11 @@
 | `659bdf6` | [CI 44147473727](https://github.com/UtopiWA/campusclaw-plus/actions/runs/44147473727) | Unit gate 退出 2，后续集成和构建跳过 |
 | `35bd6c2` | [CI 44148061626](https://github.com/UtopiWA/campusclaw-plus/actions/runs/44148061626) | 同上 |
 | `35bd6c2` | [旧安全门禁 44148061640](https://github.com/UtopiWA/campusclaw-plus/actions/runs/44148061640) | 核查时在等待带指定标签的运行器 |
+| `c8e8abf34a94fdd47dd8e673bfe550416a0c51c4` | [CI #3 · 44282282173](https://github.com/UtopiWA/campusclaw-plus/actions/runs/44282282173) | 主干推送触发；Unit gate、Integration gate、三镜像构建与标识上传通过 |
 
-公开记录只提供退出码。代码核对发现 Linux checkout 中 wrapper 为 `100644`，门禁直接执行会失败。现改为经 `sh` 调用，并在 CI 安装新脚本测试使用的 PyMySQL 依赖。MCP 构建目录仍为 `mcp-server`，镜像名改为 Compose 使用的 `mcp-demo`。
+前两次失败的公开注释只提供退出码。代码核对发现 Linux checkout 中 wrapper 为 `100644`，门禁直接执行会失败。现改为经 `sh` 调用，并在 CI 安装新脚本测试使用的 PyMySQL 依赖。MCP 构建目录仍为 `mcp-server`，镜像名改为 Compose 使用的 `mcp-demo`。
+
+成功运行的三个镜像标签为 `campusclaw-plus-{backend,frontend,mcp-demo}:c8e8abf`。逐镜像 ID 及 OCI 标签保存在 [image-provenance-44282282173](https://github.com/UtopiWA/campusclaw-plus/actions/runs/44282282173/artifacts/14416784335) 的 `image-info-44282282173.txt` 中。GitHub 公开 API 已确认该制品上传成功，逐镜像文本需登录下载。制品归档摘要为 `sha256:cb4b236f2627e5d48c8517c30693d3ca9cebebda37053f8bae96c52435aa49ad`。该摘要对应记录制品，镜像注册表发布尚未执行。
 
 ## 5. 修复版本地复核
 
@@ -46,4 +49,4 @@
 - 独立 Linux 容器从仅含跟踪文件的副本安装依赖，使用 Java 17、Node 22 和 Python 3.12，保留 `mvnw` 的 0644 权限。运行 `python scripts/check.py --mode unit`，规约、前端测试及构建、后端 256 项、MCP 和脚本检查均通过。
 - 集成门禁配置 `TESTCONTAINERS_API_VERSION=1.44`，44 项通过。三个 Dockerfile 均成功构建，镜像合包通过 `docker load` 导入验证。
 - 使用合成配置验证 Compose 默认版本、显式覆盖和空值传递，以及三个镜像名。
-- 待验证修复提交对应的 GitHub Actions 运行。私有环境完整安全门禁、镜像发布及远端 digest 尚未复测或执行。
+- 完整安全门禁单独在团队验收环境执行，现有记录见 [Class10 记录](../docs/lesson-10/README.md)。
